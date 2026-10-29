@@ -1,0 +1,1 @@
+- LightBearing 项目远程仓库为 https://github.com/hhyxx1/LightBearing.git，每次修改完成后都要提交并推送到该仓库 <!-- atomcode-memory:v1 {"id":"m-47174838-9d1f-4d11-b0f3-aca87786c2b7","created_at":"2026-10-29T18:45:43.859Z","updated_at":"2026-10-29T18:45:43.859Z","status":"active","pinned":false} -->
