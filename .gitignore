@@ -10,3 +10,7 @@
 /.clang-tidy
 **/.test
 /.appanalyzer
+/build.log
+/testbuild.log
+/testrun*.log
+/layout.json

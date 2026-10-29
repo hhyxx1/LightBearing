@@ -2,15 +2,19 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "逐光 · 摄影太阳方位与机位规划"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "逐光主界面"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "逐光"
+    },
+    {
+      "name": "permission_location_reason",
+      "value": "用于在您主动点击“使用当前位置”时获取一次当前机位坐标，计算太阳方位"
     }
   ]
 }

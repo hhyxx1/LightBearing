@@ -1,5 +1,9 @@
-import localUnitTest from './LocalUnit.test';
+import solarCalcTest from './SolarCalc.test';
+import reverseSearchTest from './ReverseSearch.test';
+import csvCodecTest from './CsvCodec.test';
 
 export default function testsuite() {
-  localUnitTest();
+  solarCalcTest();
+  reverseSearchTest();
+  csvCodecTest();
 }

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="1024" height="1024" role="img" aria-label="逐光 LightBearing 应用图标">
+  <defs>
+    <linearGradient id="lbGrad" x1="0" y1="0" x2="1" y2="1" gradientTransform="rotate(40 0.5 0.5)">
+      <stop offset="0" stop-color="#FFBC6B"/>
+      <stop offset="1" stop-color="#73D9D5"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#lbGrad)"/>
+  <g fill="none" stroke="#273241" stroke-width="3.1" stroke-linecap="round">
+    <path d="M10 51h44"/>
+    <path d="M14 44a18 18 0 0 1 36 0"/>
+    <path d="M32 9v13"/>
+    <path d="M13 24l9 7"/>
+    <path d="M51 24l-9 7"/>
+  </g>
+  <circle cx="32" cy="44" r="7" fill="#273241"/>
+</svg>

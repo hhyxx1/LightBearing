@@ -1,10 +1,9 @@
 {
   "app": {
-    "bundleName": "com.hhyxx.LightBearing",
-    "vendor": "example",
-    "versionCode": 1000000,
+    "bundleName": "com.hhyxx.lightbearing",
+    "vendor": "hhyxx",
+    "versionCode": 1,
     "versionName": "1.0.0",
-    "buildVersion": "1",
     "icon": "$media:layered_image",
     "label": "$string:app_name"
   }

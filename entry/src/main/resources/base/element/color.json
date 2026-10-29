@@ -2,7 +2,39 @@
   "color": [
     {
       "name": "start_window_background",
+      "value": "#0D1A29"
+    },
+    {
+      "name": "lb_bg",
+      "value": "#F2F6F9"
+    },
+    {
+      "name": "lb_panel",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "lb_panel2",
+      "value": "#E8EFF4"
+    },
+    {
+      "name": "lb_primary",
+      "value": "#9C5A08"
+    },
+    {
+      "name": "lb_accent",
+      "value": "#146E6B"
+    },
+    {
+      "name": "lb_ink",
+      "value": "#0D1A29"
+    },
+    {
+      "name": "lb_muted",
+      "value": "#516A7B"
+    },
+    {
+      "name": "lb_line",
+      "value": "#CFDCE4"
     }
   ]
 }
