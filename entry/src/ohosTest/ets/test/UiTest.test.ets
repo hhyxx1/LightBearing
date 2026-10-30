@@ -17,8 +17,11 @@ export default function uiTest() {
   describe('LightBearingUI', () => {
     beforeAll(async () => {
       const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+      // 安装后 bundle 内同时存在 entry 与 entry_test 两个模块，
+      // 必须显式指定 moduleName，否则隐式 Want 会以 16000001 解析失败。
       const want: Want = {
         bundleName: BUNDLE,
+        moduleName: 'entry',
         abilityName: 'EntryAbility'
       };
       try {
@@ -29,6 +32,16 @@ export default function uiTest() {
       }
       const driver = Driver.create();
       await driver.delayMs(3000);
+      // 全新安装会弹出可跳过的引导遮罩，它会拦截后续点击，这里先跳过（已跳过则忽略）
+      try {
+        await driver.assertComponentExist(ON.text('跳过引导'));
+        const skip = await driver.findComponent(ON.text('跳过引导'));
+        await skip.click();
+        hilog.info(DOMAIN, TAG, 'onboarding skipped');
+        await driver.delayMs(800);
+      } catch (err) {
+        hilog.info(DOMAIN, TAG, 'no onboarding overlay');
+      }
     });
 
     it('home_page_renders', 0, async (done: Function) => {

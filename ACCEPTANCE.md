@@ -4,7 +4,8 @@
 **构建**：`assembleHap` BUILD SUCCESSFUL，签名 HAP 1,622,711 字节（未签名 1,561,660 字节）
 **测试**：单元测试 `Tests run: 23, Failure: 0`；端到端 `Tests run: 4, Failure: 0`（模拟器）
 **截图**：`docs/screenshots/`（模拟器与真机实拍，非设计稿）
-**真机**：`4EE9K25515007252`（MIA-AL00，API 26）签名 HAP **安装成功**；启动受系统锁屏限制，待解锁后复核（见 §3、§4）
+**真机**：`4EE9K25515007252`（MIA-AL00，API 26）签名 HAP 安装成功、启动成功，实机录入机位并跑通计算与页面切换；
+hypium UI 套件在真机被系统后台启动限制拦截（`16000001`），已在模拟器跑通 4/4（见 §3、§4）
 
 > 本文件只记录**实际执行过**的验证。未执行或未通过的项目明确标注，不用全勾选代替验证。
 
@@ -45,36 +46,44 @@
 
 ## 3. 未完成的验证 / 已知问题（如实记录）
 
-1. **真机启动复核待补（安装已通过）**：签名 HAP 在 MIA-AL00 上安装成功
-   （`msg:install bundle successfully.`，原先的 `9568320 no signature file` 已随签名配置消除）。
-   但真机处于开发者模式时系统不允许自动解锁，`aa start` 返回
+1. **真机 hypium UI 套件未能跑通（应用本身实测正常）**：签名 HAP 在 MIA-AL00 上安装、启动、
+   页面切换与数据录入均实测正常（见 §4 真机证据）。但 `aa test` 启动测试进程后应用被切到后台，
+   测试内 `abilityDelegator.startAbility` 被系统拒绝：
+   `startAbility failed: {"code":16000001}`
+   （已尝试显式补 `moduleName: 'entry'`，仍被拒；同代码在模拟器上 4/4 通过）。
+   真机侧改用系统输入注入（`uitest uiInput`）驱动完成等价验证：
+   跳过引导 → 进入机位库 → 新增机位 `BundReal` (31.2372, 121.4900, Asia/Shanghai) → 保存并标记当前 →
+   首页显示真实计算结果 → 切换到太阳轨迹/设置页。
+2. **真机首次启动受锁屏限制**：开发者模式下系统不会自动解锁，`aa start` 返回
    `10106102 The device screen is locked during the application launch`；
-   需人工解锁屏幕后再跑一次启动与端到端测试并补截图。
-2. **导出的一次完整人机流程未走完**：自动化无法点击系统文件保存面板，因此
+   手动解锁屏幕后启动正常（本条已解决，仅作为复现说明保留）。
+3. **导出的一次完整人机流程未走完**：自动化无法点击系统文件保存面板，因此
    「选目录→写入→用外部工具打开校验」的最后一跳由人工完成；代码侧已确保
    返回的是系统签发的 URI 与真实字节数，且失败/取消会如实回显，不会假报成功。
-3. **Map Kit 未接入**：无 AGC 凭据；已实现离线方位图降级（真实坐标计算）。
-4. **系统分享面板不存在**：SDK 无 `@kit.ShareKit`，改为导出文件。
-5. **平板上未做实测**：平板自适应逻辑（宽度 ≥600vp 显示左侧导航栏）已实现，
+4. **Map Kit 未接入**：无 AGC 凭据；已实现离线方位图降级（真实坐标计算）。
+5. **系统分享面板不存在**：SDK 无 `@kit.ShareKit`，改为导出文件。
+6. **平板上未做实测**：平板自适应逻辑（宽度 ≥600vp 显示左侧导航栏）已实现，
    但当前仅有 phone 尺寸模拟器与手机真机，**平板布局未经真机/平板模拟器验证**。
-6. **长时稳定性测试未做满时长**：仅做了多次冷启动、前后台切换与页面往返；
+7. **长时稳定性测试未做满时长**：仅做了多次冷启动、前后台切换与页面往返；
    未执行 24h 级别压测。已有的数据恢复路径（RDB 事务 + schema 迁移 + 错误卡重试）已实现。
-7. **`hvigorw test` 的环境依赖**：本机 `@ohos/hypium@1.0.25` 缺 `src_static/testAbility` 模板，
+8. **`hvigorw test` 的环境依赖**：本机 `@ohos/hypium@1.0.25` 缺 `src_static/testAbility` 模板，
    需从 SDK 副本补齐后才能跑单测（未提交，属本机环境修补）。README §5.1 已写明。
 
 ## 4. 构建与测试原始结果
 
 ```
 # 构建
-> hvigor BUILD SUCCESSFUL in 7 s 304 ms
-entry/build/default/outputs/default/entry-default-unsigned.hap  1,561,660 bytes
+> hvigor BUILD SUCCESSFUL
+entry/build/default/outputs/default/entry-default-signed.hap     1,622,711 bytes
+entry/build/default/outputs/default/entry-default-unsigned.hap   1,561,660 bytes
+entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap   1,573,657 bytes
 
 # 单元测试（宿主机）
 Tests run: 23, Failure: 0, Error: 0, Pass: 23, Ignore: 0
 覆盖率：行 74.93%（269/359）、函数 58.97%、分支 64.84%
 明细：entry/.test/default/intermediates/test/coverage_data/test_result.txt
 
-# 端到端（模拟器）
+# 端到端（模拟器：127.0.0.1:5555）
 OHOS_REPORT_RESULT: stream=Tests run: 4, Failure: 0, Error: 0, Pass: 4, Ignore: 0
 
 # 算法外部交叉验证
@@ -82,18 +91,29 @@ OHOS_REPORT_RESULT: stream=Tests run: 4, Failure: 0, Error: 0, Pass: 4, Ignore: 
 
 # 真机安装（成功，已签名 HAP）
 [Info]App install path:...entry-default-signed.hap msg:install bundle successfully.
+[Info]App install path:...entry-ohosTest-signed.hap msg:install bundle successfully.
 
-# 真机启动（受锁屏限制）
+# 真机启动（成功，手动解锁屏幕后）
+start ability successfully.
+pidof com.hhyxx.LightBearing -> 49092
+
+# 真机 end-to-end（hypium）——失败，原因非应用缺陷
+OHOS_REPORT_RESULT: stream=Tests run: 4, Failure: 3, Error: 0, Pass: 1, Ignore: 0
+LB_UITEST: startAbility failed: {"code":16000001}
+LB_UITEST: home assertions failed: {"code":17000003}
+
+# 真机等价验证（系统输入注入，成功）
+跳过引导 -> 机位库 -> 新增机位 BundReal(31.2372,121.4900,Asia/Shanghai) -> 保存并标记当前
+首页实测：太阳方位 259.5°（正西）、高度 -9.5°、航海曙暮光、日出 06:08 / 日落 17:07
+截图：15_real_device_home / 17_real_device_locations / 18_real_device_sunpath / 19_real_device_settings
+
+# 真机早期启动阻碍（已解决，保留作复现说明）
 error: failed to start ability.
-Error Code:10106102  Error Message:The device screen is locked during the application launch, unlock screen failed.
-Error cause: The current mode is developer mode, and the screen cannot be unlocked automatically
+Error Code:10106102  The device screen is locked during the application launch, unlock screen failed.
 
-# 真机安装（旧：未签名时失败，已消除）
+# 真机安装（更早：未签名时失败，已消除）
 [Info]App install path:...entry-default-unsigned.hap msg:error: failed to install bundle.
 code:9568320 error: no signature file.
-
-# 模拟器安装（成功）
-msg:install bundle successfully.
 ```
 
 ## 5. 关闭 GPS / 断网场景
