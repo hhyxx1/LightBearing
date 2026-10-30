@@ -6,7 +6,8 @@ import { TimeUtil } from '../services/TimeUtil';
 import { LocationService } from '../services/LocationService';
 import { SensorService } from '../services/SensorService';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, ErrorCard, NoticeBar, NumberField, SwitchRow, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
+import { TopBar, ErrorCard, NoticeBar, NumberField, SwitchRow, StatusBadge, SkeletonCard,
+  SegmentedPicker, ToolButton, Dialogs } from '../components/Widgets';
 
 /**
  * S10 设置：坐标系、时区、定位授权、角度单位、隐私与说明。
@@ -21,6 +22,7 @@ export struct SettingsPage {
   @State errorText: string = '';
   @State themeMode: number = 0;
   @State angleUnit: number = 0;
+  @State reduceMotion: number = 0;
   @State tzInput: string = '';
   @State goldenUpperText: string = '6';
   @State goldenLowerText: string = '-4';
@@ -30,6 +32,8 @@ export struct SettingsPage {
   @State placesCount: number = 0;
   @State plansCount: number = 0;
   @State historyCount: number = 0;
+  @State assetCount: number = 0;
+  @State assetBytes: number = 0;
   @State historyItems: HistoryRecord[] = [];
   @State hint: string = '';
   @State showHistory: boolean = false;
@@ -50,6 +54,7 @@ export struct SettingsPage {
       const s = AppState.settings;
       this.themeMode = s.themeMode;
       this.angleUnit = s.angleUnit;
+      this.reduceMotion = s.reduceMotion;
       this.tzInput = s.tzId.length > 0 ? s.tzId : TimeUtil.deviceTimeZoneId();
       this.goldenUpperText = `${s.goldenUpper}`;
       this.goldenLowerText = `${s.goldenLower}`;
@@ -60,6 +65,9 @@ export struct SettingsPage {
       this.placesCount = stats[0];
       this.plansCount = stats[1];
       this.historyCount = stats[2];
+      const totals = await AppDb.assetTotals();
+      this.assetCount = totals[0];
+      this.assetBytes = totals[1];
       this.ready = true;
     } catch (err) {
       this.errorText = `读取设置失败：${(err as Error).message}`;
@@ -77,6 +85,7 @@ export struct SettingsPage {
       const ctx = this.hostContext();
       AppState.settings.themeMode = this.themeMode;
       AppState.settings.angleUnit = this.angleUnit;
+      AppState.settings.reduceMotion = this.reduceMotion;
       AppState.settings.tzId = this.tzInput.trim();
       AppState.settings.goldenUpper = this.parse(this.goldenUpperText, 6);
       AppState.settings.goldenLower = this.parse(this.goldenLowerText, -4);
@@ -124,45 +133,23 @@ export struct SettingsPage {
         .fontSize(FontSize.BODY_L)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.lb_ink'))
-      Row({ space: Spacing.S }) {
-        Button('跟随系统')
-          .type(ButtonType.Normal)
-          .height(MIN_TOUCH)
-          .layoutWeight(1)
-          .borderRadius(Radius.BUTTON)
-          .backgroundColor(this.themeMode === 0 ? $r('app.color.lb_primary') : $r('app.color.lb_panel2'))
-          .fontColor(this.themeMode === 0 ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
-          .fontSize(FontSize.CAPTION)
-          .onClick(() => {
-            this.themeMode = 0;
-            this.applyAndSave();
-          })
-        Button('深色')
-          .type(ButtonType.Normal)
-          .height(MIN_TOUCH)
-          .layoutWeight(1)
-          .borderRadius(Radius.BUTTON)
-          .backgroundColor(this.themeMode === 1 ? $r('app.color.lb_primary') : $r('app.color.lb_panel2'))
-          .fontColor(this.themeMode === 1 ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
-          .fontSize(FontSize.CAPTION)
-          .onClick(() => {
-            this.themeMode = 1;
-            this.applyAndSave();
-          })
-        Button('浅色')
-          .type(ButtonType.Normal)
-          .height(MIN_TOUCH)
-          .layoutWeight(1)
-          .borderRadius(Radius.BUTTON)
-          .backgroundColor(this.themeMode === 2 ? $r('app.color.lb_primary') : $r('app.color.lb_panel2'))
-          .fontColor(this.themeMode === 2 ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
-          .fontSize(FontSize.CAPTION)
-          .onClick(() => {
-            this.themeMode = 2;
-            this.applyAndSave();
-          })
-      }
-      .width('100%')
+      SegmentedPicker({
+        segments: ['跟随系统', '深色', '浅色'],
+        selectedIndex: this.themeMode,
+        onSelect: (index: number) => {
+          this.themeMode = index;
+          this.applyAndSave();
+        }
+      })
+      SwitchRow({
+        label: '减少动态效果',
+        description: '开启后页面切换不播放转场动画（API 26 未提供系统级查询，故由应用内开关控制）',
+        isOn: this.reduceMotion === 1,
+        onToggle: (on: boolean) => {
+          this.reduceMotion = on ? 1 : 0;
+          this.applyAndSave();
+        }
+      })
     }
     .width('100%')
     .padding(Spacing.XL)
@@ -202,31 +189,14 @@ export struct SettingsPage {
               .fontSize(FontSize.BODY_L)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.lb_ink'))
-            Row({ space: Spacing.S }) {
-              Button('度 (°)')
-                .type(ButtonType.Normal)
-                .height(MIN_TOUCH)
-                .layoutWeight(1)
-                .borderRadius(Radius.BUTTON)
-                .backgroundColor(this.angleUnit === 0 ? $r('app.color.lb_primary') : $r('app.color.lb_panel2'))
-                .fontColor(this.angleUnit === 0 ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
-                .onClick(() => {
-                  this.angleUnit = 0;
-                  this.applyAndSave();
-                })
-              Button('弧度 (rad)')
-                .type(ButtonType.Normal)
-                .height(MIN_TOUCH)
-                .layoutWeight(1)
-                .borderRadius(Radius.BUTTON)
-                .backgroundColor(this.angleUnit === 1 ? $r('app.color.lb_primary') : $r('app.color.lb_panel2'))
-                .fontColor(this.angleUnit === 1 ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
-                .onClick(() => {
-                  this.angleUnit = 1;
-                  this.applyAndSave();
-                })
-            }
-            .width('100%')
+            SegmentedPicker({
+              segments: ['度 (°)', '弧度 (rad)'],
+              selectedIndex: this.angleUnit,
+              onSelect: (index: number) => {
+                this.angleUnit = index;
+                this.applyAndSave();
+              }
+            })
             NumberField({
               label: '时区 ID', unit: '', valueText: this.tzInput, placeholder: '如 Asia/Shanghai',
               onChangeText: (text: string) => {
@@ -367,6 +337,27 @@ export struct SettingsPage {
                 .layoutWeight(1)
             }
             .width('100%')
+            Row({ space: Spacing.S }) {
+              Text(`导出记录 ${this.assetCount} 条 · 共 ${(this.assetBytes / 1024).toFixed(1)} KB`)
+                .fontSize(FontSize.SMALL)
+                .fontColor($r('app.color.lb_muted'))
+                .layoutWeight(1)
+              ToolButton({
+                label: '清理记录',
+                compact: true,
+                iconSrc: $r('app.media.ic_trash_primary'),
+                onTap: () => {
+                  AppDb.clearFileAssets().then(() => {
+                    this.loadAll();
+                    Dialogs.toast(this.getUIContext(), '导出记录已清理（文件仍保留在原位置）');
+                  }).catch((err: Error) => {
+                    this.hint = `清理失败：${err.message}`;
+                  });
+                }
+              })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
             Row({ space: Spacing.S }) {
               Button(this.showHistory ? '刷新历史' : '查看历史')
                 .type(ButtonType.Normal)

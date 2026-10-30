@@ -5,7 +5,9 @@ import { Place, IdGen } from '../model/Models';
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, ListRow, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, ListRow, StatusBadge, SkeletonCard,
+  KeyboardShortcutHint, Dialogs } from '../components/Widgets';
+import { InputDevices } from '../common/InputDevices';
 
 /**
  * S04 机位库：收藏地点、输入坐标、标签、搜索与修改。
@@ -35,9 +37,14 @@ export struct LocationsPage {
   /** 刚删除的机位，用于页面内撤销（不叠加第二个对话框） */
   @State undoPlace: Place | undefined = undefined;
   @State undoLabel: string = '';
+  /** 仅在检测到物理键盘时展示快捷键提示 */
+  @State hasKeyboard: boolean = false;
 
   aboutToAppear(): void {
     this.loadAll();
+    InputDevices.hasPhysicalKeyboard().then((found: boolean) => {
+      this.hasKeyboard = found;
+    });
   }
 
   private hostContext(): common.UIAbilityContext {
@@ -318,6 +325,10 @@ export struct LocationsPage {
         NoticeBar({ text: this.hint })
       }
 
+      if (this.hasKeyboard) {
+        KeyboardShortcutHint({ keys: ['Ctrl', 'S'], description: '保存机位（物理键盘可用）' })
+      }
+
       Row({ space: Spacing.S }) {
         Button('保存机位')
           .type(ButtonType.Normal)
@@ -451,6 +462,9 @@ export struct LocationsPage {
                       .layoutWeight(1)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .onClick(() => {
+                        this.onNavigate(`placeDetail:${place.id}`);
+                      })
                     if (place.id === this.currentId) {
                       StatusBadge({ label: '当前', tone: 1 })
                     }
@@ -535,5 +549,14 @@ export struct LocationsPage {
     .height('100%')
     .scrollBar(BarState.Off)
     .align(Alignment.Top)
+    .onKeyEvent((event: KeyEvent) => {
+      // 物理键盘 Ctrl+S：与界面的「保存机位」按钮等价
+      const ctrlPressed = event.getModifierKeyState !== undefined
+        && event.getModifierKeyState(['Ctrl']);
+      if (this.formOpen && event.type === KeyType.Down && ctrlPressed
+        && event.keyCode === 2035) {
+        this.saveForm();
+      }
+    })
   }
 }

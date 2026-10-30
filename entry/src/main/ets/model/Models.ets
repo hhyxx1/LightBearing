@@ -35,6 +35,8 @@ export class Place {
 /** 拍摄计划 */
 export class ShootPlan {
   id: string = '';
+  /** 所属项目（schema v2 起） */
+  projectId: string = '';
   placeId: string = '';
   placeName: string = '';
   latWgs84: number = 0;
@@ -89,6 +91,8 @@ export class AppSettings {
   onboarded: number = 0;
   /** 默认定位方式：0=手动坐标 1=前台定位 */
   locationMode: number = 0;
+  /** 减少动态效果：0=关闭 1=开启（开启后页面切换不播转场动画） */
+  reduceMotion: number = 0;
 }
 
 /** 历史记录（反向搜索结果、比较结果等） */

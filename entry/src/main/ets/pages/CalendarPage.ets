@@ -181,6 +181,9 @@ export struct CalendarPage {
       const pixelMap: image.PixelMap = await this.getUIContext().getComponentSnapshot().get('shareCard');
       const fileName = `lightbearing-${this.year}-${String(this.month).padStart(2, '0')}-${this.selectedDay()}.png`;
       const result: ExportResult = await ExportService.exportPng(this.hostContext(), fileName, pixelMap);
+      if (result.ok) {
+        await ExportService.recordAsset(result, AppState.currentProjectId);
+      }
       this.hint = result.ok ? `已导出 PNG（${result.bytes} 字节）：${result.uri}` : result.message;
       await pixelMap.release();
     } catch (err) {
@@ -212,6 +215,9 @@ export struct CalendarPage {
       }
       const result = await ExportService.exportCsv(this.hostContext(),
         `lightbearing-${this.year}-${String(this.month).padStart(2, '0')}.csv`, rows);
+      if (result.ok) {
+        await ExportService.recordAsset(result, AppState.currentProjectId);
+      }
       this.hint = result.ok ? `已导出 CSV（${result.bytes} 字节）：${result.uri}` : result.message;
     } catch (err) {
       this.hint = `导出 CSV 失败：${(err as Error).message}`;
@@ -368,6 +374,9 @@ export struct CalendarPage {
                   .backgroundColor(index === this.selectedIndex && cell.inMonth
                     ? $r('app.color.lb_primary') : Color.Transparent)
                   .borderRadius(Radius.BUTTON)
+                  .accessibilityText(cell.inMonth
+                    ? `${cell.dayOfMonth} 日，${cell.hasGolden ? '有黄金时刻，' : ''}${cell.planCount > 0 ? `计划 ${cell.planCount} 条` : '无计划'}`
+                    : '空白')
                   .onClick(() => {
                     this.selectDay(index);
                   })

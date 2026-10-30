@@ -33,13 +33,14 @@ export class Radius {
   static readonly APPLOGO: number = 17;
 }
 
-/** 设计稿字级：.eyebrow 12 / .subtitle 14 / .card h3 14 / .small 12 / .stat b 24 / .pagetitle 29-42 */
+/** 设计稿字级：.eyebrow 12 / .subtitle 14 / .card h3 14 / .small 12 / .stat b 24 / .pagetitle 29-42
+ *  正文按任务书 §3「正文 14–16vp」取 14，卡片标题/副标题 15 形成层级。 */
 export class FontSize {
   static readonly EYEBROW: number = 12;
   static readonly CAPTION: number = 11;
   static readonly SMALL: number = 12;
-  static readonly BODY: number = 13;
-  static readonly BODY_L: number = 14;
+  static readonly BODY: number = 14;
+  static readonly BODY_L: number = 15;
   static readonly TITLE: number = 20;
   static readonly H1: number = 30;
   static readonly HERO_H2: number = 22;

@@ -5,6 +5,9 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { CsvCodec } from '../utils/CsvCodec';
+import { AppDb } from '../repository/AppDb';
+import { FileAsset } from '../model/BaseModels';
+import { IdGen } from '../model/Models';
 
 const DOMAIN = 0x1004;
 const TAG = 'LB_EXPORT';
@@ -16,12 +19,37 @@ export class ExportResult {
   uri: string = '';
   bytes: number = 0;
   message: string = '';
+  /** 内容校验和（FNV-1a 32 位，十六进制），写入 FileAsset 供事后核对 */
+  checksum: string = '';
+  mime: string = '';
 
   static fail(message: string): ExportResult {
     const r = new ExportResult();
     r.ok = false;
     r.message = message;
     return r;
+  }
+}
+
+/** 校验和：FNV-1a 32 位，对字节序列稳定可复算（不引入额外依赖） */
+export class Checksum {
+  static ofBytes(data: ArrayBuffer): string {
+    const view = new Uint8Array(data);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < view.length; i++) {
+      hash = hash ^ view[i];
+      hash = (hash * 0x01000193) >>> 0;
+    }
+    return `fnv1a:${hash.toString(16).padStart(8, '0')}`;
+  }
+
+  static ofText(text: string): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      hash = hash ^ (text.charCodeAt(i) & 0xFF);
+      hash = (hash * 0x01000193) >>> 0;
+    }
+    return `fnv1a:${hash.toString(16).padStart(8, '0')}`;
   }
 }
 
@@ -36,7 +64,26 @@ export class ExportService {
   /** 写 CSV 到用户选择的位置 */
   static async exportCsv(context: common.UIAbilityContext, fileName: string, rows: string[][]): Promise<ExportResult> {
     const content = CsvCodec.build(rows);
-    return ExportService.writeText(context, fileName, content);
+    const result = await ExportService.writeText(context, fileName, content);
+    if (result.ok) {
+      result.mime = 'text/csv';
+    }
+    return result;
+  }
+
+  /** 把导出的文件登记为 FileAsset（设置页可查看与清理记录） */
+  static async recordAsset(result: ExportResult, projectId: string): Promise<void> {
+    if (!result.ok || result.uri.length === 0) {
+      return;
+    }
+    try {
+      const asset = FileAsset.of(IdGen.next('fa'), projectId, result.uri, result.mime,
+        result.bytes, result.checksum);
+      await AppDb.addFileAsset(asset);
+    } catch (err) {
+      const e = err as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'recordAsset failed: %{public}s', e.message);
+    }
   }
 
   static async writeText(context: common.UIAbilityContext, fileName: string, content: string): Promise<ExportResult> {
@@ -57,6 +104,7 @@ export class ExportService {
       r.ok = true;
       r.uri = uri;
       r.bytes = bytes;
+      r.checksum = Checksum.ofText(content);
       return r;
     } catch (err) {
       const e = err as BusinessError;
@@ -92,6 +140,8 @@ export class ExportService {
       r.ok = true;
       r.uri = uri;
       r.bytes = bytes;
+      r.checksum = Checksum.ofBytes(buffer);
+      r.mime = 'image/png';
       hilog.info(DOMAIN, TAG, 'png exported bytes=%{public}d', bytes);
       return r;
     } catch (err) {

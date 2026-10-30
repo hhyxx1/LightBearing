@@ -129,6 +129,7 @@ export struct SunPathPage {
       plan.altTolerance = 3;
       plan.note = `来自太阳轨迹 ${TimeUtil.formatTime(place.tzId, this.selectedUtc)}`;
       plan.checklist = '[]';
+      plan.projectId = AppState.currentProjectId;
       await AppDb.savePlan(plan, `从太阳轨迹保存计划 · ${place.name}`);
       await AppState.reloadData();
       Dialogs.toast(this.getUIContext(), '已保存到拍摄计划');

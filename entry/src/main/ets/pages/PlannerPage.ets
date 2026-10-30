@@ -180,6 +180,7 @@ export struct PlannerPage {
         plan.id = IdGen.next('sp');
       }
       plan.placeId = place.id;
+      plan.projectId = AppState.currentProjectId;
       plan.placeName = place.name;
       plan.latWgs84 = place.latWgs84;
       plan.lonWgs84 = place.lonWgs84;
@@ -302,6 +303,9 @@ export struct PlannerPage {
           `${plan.status}`, plan.note, plan.weatherMemo]);
       }
       const result: ExportResult = await ExportService.exportCsv(this.hostContext(), 'lightbearing-plans.csv', rows);
+      if (result.ok) {
+        await ExportService.recordAsset(result, AppState.currentProjectId);
+      }
       if (result.ok) {
         this.hint = `已写出 ${result.bytes} 字节到：${result.uri}`;
       } else {
@@ -601,6 +605,9 @@ export struct PlannerPage {
                       .fontSize(FontSize.BODY_L)
                       .fontColor($r('app.color.lb_ink'))
                       .layoutWeight(1)
+                      .onClick(() => {
+                        this.onNavigate(`planDetail:${plan.id}`);
+                      })
                     StatusBadge({ label: plan.status === 0 ? '草稿' : (plan.status === 1 ? '已确认' : '已完成'),
                       tone: plan.status === 1 ? 1 : 3 })
                   }

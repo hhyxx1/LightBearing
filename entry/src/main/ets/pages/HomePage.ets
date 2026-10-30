@@ -6,7 +6,7 @@ import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow } from '..
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
-  PermissionGate, ListRow, HeroCard, SkeletonCard, Dialogs } from '../components/Widgets';
+  PermissionGate, ProjectTile, HeroCard, SkeletonCard, Dialogs } from '../components/Widgets';
 import { SunPathChart } from '../components/Charts';
 
 /**
@@ -320,11 +320,16 @@ export struct HomePage {
           .fontColor($r('app.color.lb_muted'))
       } else {
         ForEach(this.todayPlans.slice(0, 3), (plan: ShootPlan) => {
-          ListRow({
+          ProjectTile({
             primary: plan.placeName.length > 0 ? plan.placeName : '未命名计划',
             secondary: `${TimeUtil.formatDate(plan.tzId, plan.selectedUtc)} ${TimeUtil.formatTime(plan.tzId, plan.selectedUtc)} · 目标 ${plan.targetAzimuth.toFixed(0)}°`,
-            trailing: plan.note,
-            actionLabel: '查看'
+            meta: plan.note,
+            statusText: plan.status === 0 ? '草稿' : (plan.status === 1 ? '已确认' : '已完成'),
+            statusTone: plan.status === 1 ? 1 : 3,
+            iconSrc: $r('app.media.ic_calendar_primary'),
+            onTap: () => {
+              this.onNavigate('planner');
+            }
           })
         }, (plan: ShootPlan) => plan.id)
       }
@@ -424,8 +429,24 @@ export struct HomePage {
           this.emptyBlock()
         } else {
           this.heroCard()
-          this.timeSection()
-          this.eventsSection()
+          if (this.isTablet) {
+            // 平板：图表与光线时刻双栏并排（任务书 §0「平板图表双栏」）
+            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
+              Column() {
+                this.timeSection()
+              }
+              .width('49%')
+
+              Column() {
+                this.eventsSection()
+              }
+              .width('49%')
+            }
+            .width('100%')
+          } else {
+            this.timeSection()
+            this.eventsSection()
+          }
           this.planSection()
         }
       }
@@ -437,5 +458,9 @@ export struct HomePage {
     .height('100%')
     .scrollBar(BarState.Off)
     .align(Alignment.Top)
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      const width = Number.parseFloat(`${newArea.width}`);
+      this.isTablet = width >= 600;
+    })
   }
 }

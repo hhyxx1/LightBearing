@@ -2,11 +2,13 @@ import { common } from '@kit.AbilityKit';
 import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, Candidate, SearchGoal, IdGen } from '../model/Models';
+import { Job, JobStatus } from '../model/BaseModels';
 import { SolarCalc } from '../services/SolarCalc';
 import { ReverseSearch } from '../services/ReverseSearch';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard,
+  ProgressSheet, Dialogs } from '../components/Widgets';
 
 /**
  * S03 反向寻光：给定方位/高度容差与日期范围，批量搜索满足条件的时刻。
@@ -34,6 +36,11 @@ export struct ReversePage {
   @State searched: boolean = false;
   @State summary: string = '';
   @State lastMs: number = 0;
+  /** 后台任务进度浮层 */
+  @State sheetVisible: boolean = false;
+  @State sheetPercent: number = 0;
+  @State sheetDetail: string = '';
+  private cancelRequested: boolean = false;
 
   aboutToAppear(): void {
     this.initPage();
@@ -67,15 +74,36 @@ export struct ReversePage {
     return Number.isNaN(v) ? fallback : v;
   }
 
+  /** 让出一帧，保证进度浮层能刷新（长任务不会卡住 UI 线程） */
+  private async nextFrame(): Promise<void> {
+    await new Promise<void>((resolve: () => void) => {
+      setTimeout(() => {
+        resolve();
+      }, 0);
+    });
+  }
+
+  private cancelSearch(): void {
+    this.cancelRequested = true;
+  }
+
   private async runSearch(): Promise<void> {
     const place = AppState.currentPlace;
     if (place === undefined) {
       return;
     }
     this.searching = true;
+    this.cancelRequested = false;
     this.candidates = [];
     this.summary = '';
+    this.sheetVisible = true;
+    this.sheetPercent = 0;
+    this.sheetDetail = '准备搜索…';
+    const job = Job.of(IdGen.next('job'), 'reverse');
+    job.status = JobStatus.RUNNING;
+    const jobId = job.id;
     try {
+      await AppDb.createJob(job);
       const goal = new SearchGoal();
       goal.placeId = place.id;
       goal.latWgs84 = place.latWgs84;
@@ -98,18 +126,49 @@ export struct ReversePage {
       }
 
       const t0 = new Date().getTime();
-      const found = ReverseSearch.search(goal, AppState.thresholds(), dayStarts);
+      const th = AppState.thresholds();
+      const found: Candidate[] = [];
+      // 逐日推进：每天让出一帧，进度与命中数实时可见
+      for (let i = 0; i < dayStarts.length; i++) {
+        if (this.cancelRequested) {
+          break;
+        }
+        const part: Candidate[] = ReverseSearch.search(goal, th, [dayStarts[i]]);
+        for (const c of part) {
+          found.push(c);
+        }
+        this.sheetPercent = Math.round(((i + 1) * 100) / dayStarts.length);
+        this.sheetDetail = `第 ${i + 1}/${dayStarts.length} 天 · 已命中 ${found.length}`;
+        await AppDb.updateJob(jobId, JobStatus.RUNNING, this.sheetPercent, '');
+        await this.nextFrame();
+      }
+
+      found.sort((a: Candidate, b: Candidate) => (a.azError + a.altError) - (b.azError + b.altError));
+      const limited: Candidate[] = found.length > goal.maxResults ? found.slice(0, goal.maxResults) : found;
       this.lastMs = new Date().getTime() - t0;
-      this.candidates = found;
+      this.candidates = limited;
       this.searched = true;
-      this.summary = `在 ${days} 天内按 5 分钟粗扫并逐级细化，命中 ${found.length} 个时间窗口（用时 ${this.lastMs} ms）。`;
-      await AppDb.addHistory('reverse',
-        `反向寻光 ${place.name} 目标 ${goal.azimuthTarget.toFixed(0)}°/${goal.altitudeTarget.toFixed(0)}° 命中 ${found.length}`,
-        `${days}天`);
+      const cancelled = this.cancelRequested;
+      this.summary = cancelled
+        ? `已取消，保留已找到的 ${limited.length} 个候选（用时 ${this.lastMs} ms）。`
+        : `在 ${days} 天内按 5 分钟粗扫并逐级细化，命中 ${limited.length} 个时间窗口（用时 ${this.lastMs} ms）。`;
+      await AppDb.updateJob(jobId, cancelled ? JobStatus.CANCELLED : JobStatus.DONE,
+        cancelled ? this.sheetPercent : 100, '');
+      if (!cancelled) {
+        await AppDb.addHistory('reverse',
+          `反向寻光 ${place.name} 目标 ${goal.azimuthTarget.toFixed(0)}°/${goal.altitudeTarget.toFixed(0)}° 命中 ${limited.length}`,
+          `${days}天`);
+      }
     } catch (err) {
       this.errorText = `搜索失败：${(err as Error).message}`;
+      try {
+        await AppDb.updateJob(jobId, JobStatus.FAILED, this.sheetPercent, `${(err as Error).message}`);
+      } catch (inner) {
+        // 任务状态写入失败不覆盖主错误
+      }
     } finally {
       this.searching = false;
+      this.sheetVisible = false;
     }
   }
 
@@ -133,6 +192,7 @@ export struct ReversePage {
       plan.altTolerance = this.parse(this.altTolInput, 3);
       plan.note = `反向寻光命中 · 误差 ${candidate.azError.toFixed(2)}° / ${candidate.altError.toFixed(2)}°`;
       plan.checklist = '[]';
+      plan.projectId = AppState.currentProjectId;
       await AppDb.savePlan(plan, `反向寻光加入计划 · ${place.name}`);
       await AppState.reloadData();
       Dialogs.toast(this.getUIContext(), '已加入拍摄计划');
@@ -142,7 +202,8 @@ export struct ReversePage {
   }
 
   build() {
-    Scroll() {
+    Stack() {
+      Scroll() {
       Column({ space: Spacing.M }) {
         TopBar({ title: '反向寻光', subtitle: '指定方位与高度，找出可达的时间窗口' })
 
@@ -311,5 +372,19 @@ export struct ReversePage {
     .height('100%')
     .scrollBar(BarState.Off)
     .align(Alignment.Top)
+
+      ProgressSheet({
+        visible: this.sheetVisible,
+        sheetTitle: '反向寻光搜索中',
+        detail: this.sheetDetail,
+        percent: this.sheetPercent,
+        cancellable: true,
+        onCancel: () => {
+          this.cancelSearch();
+        }
+      })
+    }
+    .width('100%')
+    .height('100%')
   }
 }

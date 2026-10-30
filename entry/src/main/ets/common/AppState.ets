@@ -2,6 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppDb } from '../repository/AppDb';
 import { AppSettings, Place, ShootPlan, IdGen } from '../model/Models';
+import { AppProject } from '../model/BaseModels';
 import { LightThresholds } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { Theme } from './Theme';
@@ -24,6 +25,9 @@ export class AppState {
   static ready: boolean = false;
   /** 上次错误（用于错误态展示与重试） */
   static lastError: string = '';
+  /** 当前项目（schema v2 起，计划归属项目） */
+  static currentProjectId: string = '';
+  static projects: AppProject[] = [];
   /** 是否有未保存的表单编辑（非空即未保存，内容用于提示文案） */
   static dirtyForm: string = '';
 
@@ -60,6 +64,9 @@ export class AppState {
   static async reloadData(): Promise<void> {
     AppState.places = await AppDb.listPlaces();
     AppState.plans = await AppDb.listPlans();
+    const defaultProject = await AppDb.ensureDefaultProject();
+    AppState.projects = await AppDb.listProjects();
+    AppState.currentProjectId = defaultProject.id;
     if (AppState.currentPlace !== undefined) {
       const id = AppState.currentPlace.id;
       let found: Place | undefined = undefined;

@@ -115,6 +115,11 @@ export NODE_HOME="/c/Program Files/Huawei/DevEco Studio/tools/node"
 - **危险动作可撤销**：删除机位或计划后，页面内出现撤销条（「已删除 X」+ 撤销 / 关闭），
   撤销会把对象重新写回 RDB。不采用「删完再弹第二个对话框」的做法——连续弹窗会被系统吞掉。
 - **加载骨架屏**：加载态用 `SkeletonCard` 占位，而不是只有一个转圈。
+- **列表 → 详情**：计划与机位列表点标题进入 `planDetail` / `placeDetail` 独立路由，
+  详情页复核实际太阳位置、支持导出单条与删除，而不是在列表里就地展开。
+- **长任务进度**：反向寻光逐日推进并写入 `jobs` 进度，界面用 `ProgressSheet` 显示
+  「第 n/N 天 · 已命中 x」，可随时取消；不再整段阻塞 UI 线程。
+- **导出可追溯**：每次导出记录为 `FileAsset`（URI/mime/字节数/校验和），设置页可查看与清理记录。
 
 ### 3.2 视觉系统与图标
 
@@ -152,10 +157,14 @@ export NODE_HOME="/c/Program Files/Huawei/DevEco Studio/tools/node"
 
 ## 4. 数据模型与持久化
 
-- `places`（机位）、`plans`（拍摄计划）、`settings`（键值设置）、`history`（操作历史）。
-- 建库时用 `PRAGMA user_version` 驱动迁移（当前 schema=1），迁移与写入均包在事务中，失败回滚。
+- 业务表：`places`（机位）、`plans`（拍摄计划，含 `project_id`）、`settings`（键值设置）、`history`（操作历史）。
+- 基础模型（schema **v2**）：`projects`（项目，首个自动创建为「默认项目」）、
+  `file_assets`（导出文件资产：URI/mime/字节数/校验和）、`jobs`（后台任务：状态/进度/错误码）。
+- 迁移：`PRAGMA user_version` 驱动，v1→v2 建表并 `ALTER TABLE plans ADD COLUMN project_id`，
+  迁移与写入均包在事务中，失败回滚。
 - 坐标一律 WGS84；时区只用于展示与输入换算（`i18n.TimeZone.getOffset`，含夏令时）。
-- 计划与历史的写入在同一事务内完成，保证一致性。
+- 计划与历史的写入在同一事务内完成，保证一致性；删除项目只解除计划归属，不动计划本身。
+- 导出文件校验和为 FNV-1a 32 位（`fnv1a:xxxxxxxx`），写入 `file_assets` 供事后核对。
 
 ## 5. 测试
 
@@ -192,6 +201,16 @@ hdc -t 127.0.0.1:5555 shell "aa test -b com.hhyxx.lightbearing -m entry_test -s 
 结果：`Tests run: 4, Failure: 0, Error: 0, Pass: 4`。UI 用例通过 `AbilityDelegator` 拉起
 `EntryAbility` 后，用 `@kit.TestKit` 的 Driver 断言首页标题、底部导航切换到太阳轨迹、进入「更多工具」。
 
+### 5.2.1 稳定性（真机 30 轮页面往返）
+
+用系统输入注入在真机（MIA-AL00）上循环「一级 ↔ 二级」页面 30 轮，每轮检查进程：
+
+| 指标 | 结果 |
+|---|---|
+| 进程存活 | **30/30**，PID 始终为同一值（无重启） |
+| `jscrash` / `JSERROR` / `CPP_CRASH` | **0 命中** |
+| 日志脚本 | 见提交说明中的临时脚本逻辑（`uitest uiInput click` + `pidof` + `hilog` 扫描） |
+
 ### 5.3 算法外部交叉验证
 
 ```bash
@@ -215,16 +234,20 @@ node tools/solar-check/check.mjs
 
 ## 7. 已知限制（如实说明）
 
-1. **真机安装未完成**：缺少 `com.hhyxx.lightbearing` 的签名证书/Profile（见 2.1），
-   真机验证改用同 API 26 的模拟器完成。
-2. **Map Kit 未接入**：`@hms.core.map` 需要 AGC 开通地图服务并配置 Client ID/签名指纹。
+1. **真机首次启动需手动解锁**：真机处于开发者模式时系统不允许自动解锁，
+   `aa start` 会返回 `10106102 The device screen is locked`；解锁后启动正常，安装与运行均已实测通过。
+2. **权限撤销未实测**：系统 `acm` 在 shell 下不可执行，权限弹窗是独立系统窗口、UI 自动化抓不到，
+   因此「运行时撤销定位权限」的路径只有代码分支，没有实机证据。
+3. **平板布局未实测**：≥600vp 的双栏与侧栏逻辑已实现，但手头只有手机设备。
+4. **「减少动态效果」是应用内开关**：API 26 未提供读取系统该设置的公开接口。
+5. **Map Kit 未接入**：`@hms.core.map` 需要 AGC 开通地图服务并配置 Client ID/签名指纹。
    按任务书要求实现了真实可用的降级路径（离线方位图 + 手动坐标），未显示在线底图。
-3. **无系统分享面板**：本 SDK 未提供 ShareKit（`@kit.ShareKit` 不存在），
+6. **无系统分享面板**：本 SDK 未提供 ShareKit（`@kit.ShareKit` 不存在），
    分享改为「导出文件到用户选择的位置」，可被外部工具验证。
-4. **坐标转换**：内部一律 WGS84；未实现未经核实的 GCJ-02 偏移，界面中已明确提示。
-5. **阳光窗口依赖可配置阈值**：黄金/蓝调为高度角区间（默认 +6/−4、−4/−6），
+7. **坐标转换**：内部一律 WGS84；未实现未经核实的 GCJ-02 偏移，界面中已明确提示。
+8. **阳光窗口依赖可配置阈值**：黄金/蓝调为高度角区间（默认 +6/−4、−4/−6），
    在设置页可改；不同摄影流派定义不同，故不做硬编码定论。
-6. **天气**：只有用户手写的「天气备忘」，不接入任何天气服务，界面已标注不是预报。
+9. **天气**：只有用户手写的「天气备忘」，不接入任何天气服务，界面已标注不是预报。
 
 ## 8. 目录结构
 
@@ -234,17 +257,20 @@ entry/src/main/ets/
   entryability/EntryAbility.ets       入口（初始化 RDB、加载首页）
   common/AppState.ets                 跨页面共享状态（真实数据，不含演示数组）
   common/Theme.ets                    设计 token、主题应用、Canvas 取色
-  model/Models.ets                    数据模型（单一来源）
-  repository/AppDb.ets                RDB 仓储：迁移、事务、CRUD
+  common/InputDevices.ets             物理键盘探测（决定是否显示快捷键提示）
+  model/Models.ets                    业务模型（机位/计划/设置/历史）
+  model/BaseModels.ets                基础模型（项目/文件资产/后台任务）
+  repository/AppDb.ets                RDB 仓储：迁移(v2)、事务、CRUD
   services/SolarCalc.ets              太阳位置、日出日落、曙暮光、黄金/蓝调
   services/TimeUtil.ets               i18n 时区换算（含夏令时）
   services/ReverseSearch.ets          反向寻光（粗扫 + 逐级细化）
   services/LocationService.ets        前台一次定位 + 权限降级
   services/SensorService.ets          方向传感器订阅与能力检测
-  services/ExportService.ets          CSV/PNG 真实写文件
-  components/Widgets.ets              顶栏/卡片/空态/错误卡/权限门/对话框等
+  services/ExportService.ets          CSV/PNG 真实写文件 + 校验和 + 资产登记
+  components/Widgets.ets              顶栏/hero/卡片/空态/错误卡/权限门/骨架屏/
+                                      磁贴/工具按钮/分段选择器/进度浮层/快捷键提示/对话框
   components/Charts.ets               Canvas 日轨、罗盘、方位图、对照曲线
-  pages/*.ets                         10 个业务页面 + Index（Navigation 外壳）
+  pages/*.ets                         10 个业务页面 + 计划/机位详情 + Index（Navigation 外壳）
 entry/src/test/                       宿主机单元测试
 entry/src/ohosTest/                   端到端 / UI 自动化测试
 tools/solar-check/                    算法外部交叉验证（Node）

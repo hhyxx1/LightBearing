@@ -1,0 +1,55 @@
+start pid: 63032
+iter 0: pid=63032
+iter 1: pid=63032
+iter 2: pid=63032
+iter 3: pid=63032
+iter 4: pid=63032
+iter 5: pid=63032
+iter 6: pid=63032
+iter 7: pid=63032
+iter 8: pid=63032
+iter 9: pid=63032
+iter 10: pid=63032
+iter 11: pid=63032
+iter 12: pid=63032
+iter 13: pid=63032
+iter 14: pid=63032
+iter 15: pid=63032
+iter 16: pid=63032
+iter 17: pid=63032
+iter 18: pid=63032
+iter 19: pid=63032
+iter 20: pid=63032
+iter 21: pid=63032
+iter 22: pid=63032
+iter 23: pid=63032
+iter 24: pid=63032
+iter 25: pid=63032
+iter 26: pid=63032
+iter 27: pid=63032
+iter 28: pid=63032
+iter 29: pid=63032
+alive: 30 dead: 0
+crash log scan:
+10-30 20:14:19.154 47768 47781 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:19.165 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=664!
+10-30 20:14:24.367   732   732 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=732, ppid:710.
+10-30 20:14:24.373 47768 47781 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:24.383 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=732!
+10-30 20:14:29.527   860   860 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=860, ppid:855.
+10-30 20:14:29.534 47768 46626 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:29.543 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=860!
+10-30 20:14:34.688   889   889 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=889, ppid:887.
+10-30 20:14:34.693 47768 46626 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:34.700 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=889!
+10-30 20:14:39.834   938   938 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=938, ppid:936.
+10-30 20:14:39.841 47768 46626 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:39.851 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=938!
+10-30 20:14:44.984   983   983 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=983, ppid:977.
+10-30 20:14:44.989 47768 46626 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:44.996 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=983!
+10-30 20:14:50.150  1048  1048 I C02D20/hidumper/DumperService: SetCmdArgs# hidumper cmd:hidumper -s 1201 -a -p Faultlogger -LogSuffixWithMs , calllingUid=2000, calllingPid=1048, ppid:1043.
+10-30 20:14:50.158 47768 46626 I C02D11/hiview/Faultlogger: DumpByCommands: DumpRequest: detail:0, list:0, file:, name:, time:-1
+10-30 20:14:50.167 36559 36559 I C02D20/hidumper_service/DumperService: GetData# SA name:1201 dump success, cmd:-p Faultlogger -LogSuffixWithMs , calllingPid=1048!
+
+DONE

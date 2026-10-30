@@ -3,11 +3,12 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Place, ShootPlan, AppSettings, HistoryRecord, IdGen } from '../model/Models';
+import { AppProject, FileAsset, Job, JobStatus } from '../model/BaseModels';
 
 const DOMAIN = 0x1001;
 const TAG = 'LB_DB';
 /** 当前 schema 版本；未来字段变更时 +1 并在 migrate 内补 DDL */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * 本地持久化仓储（ArkData RDB）。
@@ -98,6 +99,35 @@ export class AppDb {
           created_at INTEGER NOT NULL)`);
         await store.executeSql('CREATE INDEX IF NOT EXISTS idx_plans_selected ON plans(selected_utc)');
         await store.executeSql('CREATE INDEX IF NOT EXISTS idx_history_created ON history(created_at)');
+      }
+      if (from < 2) {
+        // 任务书 §7 基础模型：项目 / 文件资产 / 后台任务
+        await store.executeSql(`CREATE TABLE IF NOT EXISTS projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          status INTEGER NOT NULL DEFAULT 0,
+          schema_version INTEGER NOT NULL DEFAULT 2,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL)`);
+        await store.executeSql(`CREATE TABLE IF NOT EXISTS file_assets (
+          id TEXT PRIMARY KEY,
+          project_id TEXT NOT NULL DEFAULT '',
+          sandbox_path TEXT NOT NULL,
+          mime TEXT NOT NULL DEFAULT '',
+          size INTEGER NOT NULL DEFAULT 0,
+          checksum TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL)`);
+        await store.executeSql(`CREATE TABLE IF NOT EXISTS jobs (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL,
+          status INTEGER NOT NULL DEFAULT 0,
+          progress INTEGER NOT NULL DEFAULT 0,
+          error_code TEXT NOT NULL DEFAULT '',
+          created_at INTEGER NOT NULL,
+          finished_at INTEGER NOT NULL DEFAULT 0)`);
+        await store.executeSql("ALTER TABLE plans ADD COLUMN project_id TEXT NOT NULL DEFAULT ''");
+        await store.executeSql('CREATE INDEX IF NOT EXISTS idx_assets_created ON file_assets(created_at)');
+        await store.executeSql('CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at)');
       }
       await store.executeSql(`PRAGMA user_version = ${SCHEMA_VERSION}`);
       store.commit();
@@ -239,6 +269,7 @@ export class AppDb {
         plan.updatedAt = now;
         const values: relationalStore.ValuesBucket = {
           'id': plan.id,
+          'project_id': plan.projectId,
           'place_id': plan.placeId,
           'place_name': plan.placeName,
           'lat': plan.latWgs84,
@@ -261,10 +292,10 @@ export class AppDb {
         plan.createdAt = existing.createdAt;
         plan.updatedAt = now;
         await store.executeSql(
-          `UPDATE plans SET place_id = ?, place_name = ?, lat = ?, lon = ?, tz_id = ?, selected_utc = ?,
+          `UPDATE plans SET project_id = ?, place_id = ?, place_name = ?, lat = ?, lon = ?, tz_id = ?, selected_utc = ?,
            target_az = ?, target_alt = ?, az_tol = ?, alt_tol = ?, note = ?, weather_memo = ?,
            checklist = ?, status = ?, updated_at = ? WHERE id = ?`,
-          [plan.placeId, plan.placeName, plan.latWgs84, plan.lonWgs84, plan.tzId, plan.selectedUtc,
+          [plan.projectId, plan.placeId, plan.placeName, plan.latWgs84, plan.lonWgs84, plan.tzId, plan.selectedUtc,
             plan.targetAzimuth, plan.targetAltitude, plan.azTolerance, plan.altTolerance, plan.note,
             plan.weatherMemo, plan.checklist, plan.status, plan.updatedAt, plan.id]
         );
@@ -287,6 +318,7 @@ export class AppDb {
   private static readPlan(rs: relationalStore.ResultSet): ShootPlan {
     const p = new ShootPlan();
     p.id = rs.getString(rs.getColumnIndex('id'));
+    p.projectId = rs.getString(rs.getColumnIndex('project_id'));
     p.placeId = rs.getString(rs.getColumnIndex('place_id'));
     p.placeName = rs.getString(rs.getColumnIndex('place_name'));
     p.latWgs84 = rs.getDouble(rs.getColumnIndex('lat'));
@@ -333,6 +365,8 @@ export class AppDb {
         s.onboarded = Number.parseInt(raw);
       } else if (key === 'locationMode') {
         s.locationMode = Number.parseInt(raw);
+      } else if (key === 'reduceMotion') {
+        s.reduceMotion = Number.parseInt(raw);
       }
     }
     rs.close();
@@ -350,7 +384,8 @@ export class AppDb {
       ['goldenLower', `${s.goldenLower}`],
       ['blueLower', `${s.blueLower}`],
       ['onboarded', `${s.onboarded}`],
-      ['locationMode', `${s.locationMode}`]
+      ['locationMode', `${s.locationMode}`],
+      ['reduceMotion', `${s.reduceMotion}`]
     ];
     store.beginTransaction();
     try {
@@ -410,6 +445,184 @@ export class AppDb {
   static async saveSetting(key: string, value: string): Promise<void> {
     const store = AppDb.requireStore();
     await store.executeSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  }
+
+  // ---------------- 项目 / 文件资产 / 后台任务（schema v2） ----------------
+
+  static async listProjects(): Promise<AppProject[]> {
+    const store = AppDb.requireStore();
+    const rs = await store.querySql('SELECT * FROM projects ORDER BY created_at ASC');
+    const list: AppProject[] = [];
+    while (rs.goToNextRow()) {
+      const p = new AppProject();
+      p.id = rs.getString(rs.getColumnIndex('id'));
+      p.name = rs.getString(rs.getColumnIndex('name'));
+      p.status = rs.getLong(rs.getColumnIndex('status'));
+      p.schemaVersion = rs.getLong(rs.getColumnIndex('schema_version'));
+      p.createdAt = rs.getLong(rs.getColumnIndex('created_at'));
+      p.updatedAt = rs.getLong(rs.getColumnIndex('updated_at'));
+      list.push(p);
+    }
+    rs.close();
+    return list;
+  }
+
+  /** 保证至少有一个项目可用；首个自动命名为「默认项目」 */
+  static async ensureDefaultProject(): Promise<AppProject> {
+    const existing = await AppDb.listProjects();
+    if (existing.length > 0) {
+      return existing[0];
+    }
+    const project = AppProject.of(IdGen.next('prj'), '默认项目');
+    await AppDb.saveProject(project);
+    return project;
+  }
+
+  static async saveProject(project: AppProject): Promise<void> {
+    const store = AppDb.requireStore();
+    const now = new Date().getTime();
+    const rs = await store.querySql('SELECT id, created_at FROM projects WHERE id = ?', [project.id]);
+    let exists = false;
+    let createdAt = now;
+    if (rs.goToNextRow()) {
+      exists = true;
+      createdAt = rs.getLong(rs.getColumnIndex('created_at'));
+    }
+    rs.close();
+    if (exists) {
+      project.createdAt = createdAt;
+      project.updatedAt = now;
+      await store.executeSql('UPDATE projects SET name = ?, status = ?, schema_version = ?, updated_at = ? WHERE id = ?',
+        [project.name, project.status, project.schemaVersion, project.updatedAt, project.id]);
+      return;
+    }
+    project.createdAt = now;
+    project.updatedAt = now;
+    const values: relationalStore.ValuesBucket = {
+      'id': project.id,
+      'name': project.name,
+      'status': project.status,
+      'schema_version': project.schemaVersion,
+      'created_at': project.createdAt,
+      'updated_at': project.updatedAt
+    };
+    await store.insert('projects', values);
+  }
+
+  /** 删除项目：计划不被删除，只解除项目归属；同时清理该项目的文件资产记录 */
+  static async deleteProject(id: string): Promise<void> {
+    const store = AppDb.requireStore();
+    store.beginTransaction();
+    try {
+      await store.executeSql("UPDATE plans SET project_id = '' WHERE project_id = ?", [id]);
+      await store.executeSql('DELETE FROM file_assets WHERE project_id = ?', [id]);
+      await store.executeSql('DELETE FROM projects WHERE id = ?', [id]);
+      store.commit();
+    } catch (err) {
+      store.rollBack();
+      throw new Error(`删除项目失败：${(err as BusinessError).message}`);
+    }
+  }
+
+  static async listFileAssets(limit: number): Promise<FileAsset[]> {
+    const store = AppDb.requireStore();
+    const rs = await store.querySql('SELECT * FROM file_assets ORDER BY created_at DESC LIMIT ?', [limit]);
+    const list: FileAsset[] = [];
+    while (rs.goToNextRow()) {
+      const a = new FileAsset();
+      a.id = rs.getString(rs.getColumnIndex('id'));
+      a.projectId = rs.getString(rs.getColumnIndex('project_id'));
+      a.sandboxPath = rs.getString(rs.getColumnIndex('sandbox_path'));
+      a.mime = rs.getString(rs.getColumnIndex('mime'));
+      a.size = rs.getLong(rs.getColumnIndex('size'));
+      a.checksum = rs.getString(rs.getColumnIndex('checksum'));
+      a.createdAt = rs.getLong(rs.getColumnIndex('created_at'));
+      list.push(a);
+    }
+    rs.close();
+    return list;
+  }
+
+  static async addFileAsset(asset: FileAsset): Promise<void> {
+    const store = AppDb.requireStore();
+    asset.createdAt = new Date().getTime();
+    const values: relationalStore.ValuesBucket = {
+      'id': asset.id,
+      'project_id': asset.projectId,
+      'sandbox_path': asset.sandboxPath,
+      'mime': asset.mime,
+      'size': asset.size,
+      'checksum': asset.checksum,
+      'created_at': asset.createdAt
+    };
+    await store.insert('file_assets', values);
+  }
+
+  /** 仅清理记录，不删除用户已保存的文件（文件在用户选择的位置） */
+  static async clearFileAssets(): Promise<void> {
+    const store = AppDb.requireStore();
+    await store.executeSql('DELETE FROM file_assets');
+  }
+
+  /** [条数, 总字节数] */
+  static async assetTotals(): Promise<number[]> {
+    const store = AppDb.requireStore();
+    const rs = await store.querySql('SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS s FROM file_assets');
+    let count = 0;
+    let size = 0;
+    if (rs.goToFirstRow()) {
+      count = rs.getLong(0);
+      size = rs.getLong(1);
+    }
+    rs.close();
+    return [count, size];
+  }
+
+  static async createJob(job: Job): Promise<void> {
+    const store = AppDb.requireStore();
+    job.createdAt = new Date().getTime();
+    const values: relationalStore.ValuesBucket = {
+      'id': job.id,
+      'type': job.type,
+      'status': job.status,
+      'progress': job.progress,
+      'error_code': job.errorCode,
+      'created_at': job.createdAt,
+      'finished_at': job.finishedAt
+    };
+    await store.insert('jobs', values);
+  }
+
+  static async updateJob(id: string, status: number, progress: number, errorCode: string): Promise<void> {
+    const store = AppDb.requireStore();
+    const finishedAt = status === JobStatus.RUNNING || status === JobStatus.QUEUED ? 0 : new Date().getTime();
+    await store.executeSql('UPDATE jobs SET status = ?, progress = ?, error_code = ?, finished_at = ? WHERE id = ?',
+      [status, progress, errorCode, finishedAt, id]);
+  }
+
+  static async listRecentJobs(limit: number): Promise<Job[]> {
+    const store = AppDb.requireStore();
+    const rs = await store.querySql('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?', [limit]);
+    const list: Job[] = [];
+    while (rs.goToNextRow()) {
+      const j = new Job();
+      j.id = rs.getString(rs.getColumnIndex('id'));
+      j.type = rs.getString(rs.getColumnIndex('type'));
+      j.status = rs.getLong(rs.getColumnIndex('status'));
+      j.progress = rs.getLong(rs.getColumnIndex('progress'));
+      j.errorCode = rs.getString(rs.getColumnIndex('error_code'));
+      j.createdAt = rs.getLong(rs.getColumnIndex('created_at'));
+      j.finishedAt = rs.getLong(rs.getColumnIndex('finished_at'));
+      list.push(j);
+    }
+    rs.close();
+    return list;
+  }
+
+  static async clearFinishedJobs(): Promise<void> {
+    const store = AppDb.requireStore();
+    await store.executeSql('DELETE FROM jobs WHERE status IN (?, ?, ?)',
+      [JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED]);
   }
 
   /** 数据库统计（设置页展示真实体积） */

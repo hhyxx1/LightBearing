@@ -111,6 +111,11 @@ def main() -> None:
     start.putalpha(mask)
     write_png(start, "entry/src/main/resources/base/media/startIcon.png")
 
+    # 3.5 多尺寸位图（交付给旧平台/商店素材用；HarmonyOS 分层图标仍用 1024 前景+背景）
+    for size_px in (48, 72, 96, 144, 192, 288, 512):
+        scaled = base.resize((size_px, size_px), Image.LANCZOS)
+        write_png(scaled, f"docs/icon/sizes/lightbearing_icon_{size_px}.png")
+
     # 4. 矢量源
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="1024" height="1024" role="img" aria-label="逐光 LightBearing 应用图标">
   <defs>

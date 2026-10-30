@@ -15,6 +15,8 @@ import { PlannerPage } from './PlannerPage';
 import { CalendarPage } from './CalendarPage';
 import { ComparePage } from './ComparePage';
 import { SettingsPage } from './SettingsPage';
+import { PlanDetailPage } from './PlanDetailPage';
+import { PlaceDetailPage } from './PlaceDetailPage';
 
 /** 一级导航项：图标按状态取不同色变体（与设计稿 .navbtn 的 muted/ink 一致） */
 class NavItem {
@@ -138,7 +140,22 @@ struct Index {
     this.navigateTo(route);
   }
 
+  /** 是否播放转场动画（「减少动态效果」开启后一律无动画） */
+  private animateOn(): boolean {
+    return AppState.settings.reduceMotion === 0;
+  }
+
   private navigateTo(route: string): void {
+    // 详情路由：'planDetail:<id>' / 'placeDetail:<id>'，带参数推入
+    const sep = route.indexOf(':');
+    if (sep > 0) {
+      const detailRoute = route.substring(0, sep);
+      const detailId = route.substring(sep + 1);
+      this.pathStack.clear(false);
+      this.pathStack.pushPathByName(detailRoute, detailId, this.animateOn());
+      this.currentRoute = detailRoute;
+      return;
+    }
     if (route === 'home') {
       // 回到内容区：关闭动画，避免先倒退再前进的抖动
       this.pathStack.clear(false);
@@ -161,7 +178,7 @@ struct Index {
     }
     // 二级页面：先无动画回到内容区，再播放一次正常的推入转场
     this.pathStack.clear(false);
-    this.pathStack.pushPathByName(route, '', true);
+    this.pathStack.pushPathByName(route, '', this.animateOn());
     this.currentRoute = route;
   }
 
@@ -173,7 +190,7 @@ struct Index {
   }
 
   @Builder
-  destinationBuilder(name: string) {
+  destinationBuilder(name: string, param: string) {
     NavDestination() {
       if (name === 'sunpath') {
         SunPathPage({
@@ -249,6 +266,26 @@ struct Index {
         })
       } else if (name === 'settings') {
         SettingsPage({
+          onNavigate: (route: string) => {
+            this.go(route);
+          },
+          onBack: () => {
+            this.back();
+          }
+        })
+      } else if (name === 'planDetail') {
+        PlanDetailPage({
+          planId: param,
+          onNavigate: (route: string) => {
+            this.go(route);
+          },
+          onBack: () => {
+            this.back();
+          }
+        })
+      } else if (name === 'placeDetail') {
+        PlaceDetailPage({
+          placeId: param,
           onNavigate: (route: string) => {
             this.go(route);
           },
@@ -392,6 +429,8 @@ struct Index {
     .width('100%')
     .backgroundColor($r('app.color.lb_panel'))
     .border({ width: { top: 1 }, color: $r('app.color.lb_line') })
+    // 底部导航背景延伸到手势条下方，内容仍由系统安全区约束
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
   /** 平板左侧导航（对应 .sidebar：品牌区 + PAGES 小标题 + navbtn） */
