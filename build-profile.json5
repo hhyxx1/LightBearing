@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Remote\\.ohos\\config\\default_LightBearing_SSK3xbC7N4im_okTTFVkjMsJgTmHMK9MMmqNPNCpKc4=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BA54C454DA29DB6AF4431ECA76C8541CF825D988EB65B0370C96964EBEEDD00C8A36163DABC2B83",
+          "profile": "C:\\Users\\Remote\\.ohos\\config\\default_LightBearing_SSK3xbC7N4im_okTTFVkjMsJgTmHMK9MMmqNPNCpKc4=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Remote\\.ohos\\config\\default_LightBearing_SSK3xbC7N4im_okTTFVkjMsJgTmHMK9MMmqNPNCpKc4=.p12",
+          "storePassword": "0000001B5CEB917618A36DF1779DFADC5613A36374C56D1DE638F81ACE12BE35775655AD900A2F5DFFE374"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",

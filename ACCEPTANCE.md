@@ -1,10 +1,10 @@
 # 验收报告（Acceptance）
 
 **验收环境**：模拟器 `127.0.0.1:5555`（emulator，OpenHarmony 7.0.0.107，API 26，1280×2832）
-**构建**：`assembleHap` BUILD SUCCESSFUL，未签名 HAP 1,561,660 字节
-**测试**：单元测试 `Tests run: 23, Failure: 0`；端到端 `Tests run: 4, Failure: 0`
-**截图**：`docs/screenshots/`（模拟器实拍，非设计稿）
-**真机**：`4EE9K25515007252`（MIA-AL00，API 26）安装被拒 —— `9568320 no signature file`，见 §4
+**构建**：`assembleHap` BUILD SUCCESSFUL，签名 HAP 1,622,711 字节（未签名 1,561,660 字节）
+**测试**：单元测试 `Tests run: 23, Failure: 0`；端到端 `Tests run: 4, Failure: 0`（模拟器）
+**截图**：`docs/screenshots/`（模拟器与真机实拍，非设计稿）
+**真机**：`4EE9K25515007252`（MIA-AL00，API 26）签名 HAP **安装成功**；启动受系统锁屏限制，待解锁后复核（见 §3、§4）
 
 > 本文件只记录**实际执行过**的验证。未执行或未通过的项目明确标注，不用全勾选代替验证。
 
@@ -45,8 +45,11 @@
 
 ## 3. 未完成的验证 / 已知问题（如实记录）
 
-1. **真机安装未通过**：`hdc install` 返回 `9568320 no signature file`。原因是工程无签名证书，
-   非代码缺陷。修复方法见 README §2.1（需 AGC 调试证书与 Profile）。
+1. **真机启动复核待补（安装已通过）**：签名 HAP 在 MIA-AL00 上安装成功
+   （`msg:install bundle successfully.`，原先的 `9568320 no signature file` 已随签名配置消除）。
+   但真机处于开发者模式时系统不允许自动解锁，`aa start` 返回
+   `10106102 The device screen is locked during the application launch`；
+   需人工解锁屏幕后再跑一次启动与端到端测试并补截图。
 2. **导出的一次完整人机流程未走完**：自动化无法点击系统文件保存面板，因此
    「选目录→写入→用外部工具打开校验」的最后一跳由人工完成；代码侧已确保
    返回的是系统签发的 URI 与真实字节数，且失败/取消会如实回显，不会假报成功。
@@ -77,7 +80,15 @@ OHOS_REPORT_RESULT: stream=Tests run: 4, Failure: 0, Error: 0, Pass: 4, Ignore: 
 # 算法外部交叉验证
 最大误差 27.4s，容差 120s，失败项 0；物理不变量 9/9 通过
 
-# 真机安装尝试（失败证据）
+# 真机安装（成功，已签名 HAP）
+[Info]App install path:...entry-default-signed.hap msg:install bundle successfully.
+
+# 真机启动（受锁屏限制）
+error: failed to start ability.
+Error Code:10106102  Error Message:The device screen is locked during the application launch, unlock screen failed.
+Error cause: The current mode is developer mode, and the screen cannot be unlocked automatically
+
+# 真机安装（旧：未签名时失败，已消除）
 [Info]App install path:...entry-default-unsigned.hap msg:error: failed to install bundle.
 code:9568320 error: no signature file.
 

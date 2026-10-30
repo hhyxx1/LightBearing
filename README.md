@@ -8,7 +8,7 @@ HarmonyOS 7 / **API 26 only** 原生应用，使用 **ArkTS + ArkUI** 与官方�
 | 项目 | 值 |
 |---|---|
 | 中文名 / 英文名 | 逐光 / LightBearing |
-| Bundle Name | `com.hhyxx.lightbearing` |
+| Bundle Name | `com.hhyxx.LightBearing`（与 AGC 已注册应用记录、调试签名 profile 一致；PRD 原文为全小写 `com.hhyxx.lightbearing`，因 AGC 记录与签名证书已绑定大写形式，经确认以注册名称为准） |
 | 版本 | 1.0.0（versionCode 1） |
 | 编译 / 目标 SDK | 26.0.0（API 26，`compileSdkVersion=26`、`compatibleSdkVersion=26`、`targetSdkVersion=26`） |
 | 支持设备 | phone、tablet（不含 2in1） |
@@ -41,28 +41,45 @@ export NODE_HOME="/c/Program Files/Huawei/DevEco Studio/tools/node"
   assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
 ```
 
-产物：`entry/build/default/outputs/default/entry-default-unsigned.hap`（实测 1,561,660 字节）。
+产物：
+- 已签名（`signingConfigs` 已配置）：`entry/build/default/outputs/default/entry-default-signed.hap`（实测 1,622,711 字节）
+- 未签名：`entry-default-unsigned.hap`（实测 1,561,660 字节）
 
 也可以用 DevEco Studio 打开工程后执行 **Build → Build Hap(s)/APP(s)**。
 
-### 2.1 安装与真机签名（重要）
+### 2.1 签名与安装（重要）
 
-- 当前 `build-profile.json5` 的 `signingConfigs` 为空，因此构建产物是**未签名 HAP**。
+工程已配置 DevEco Studio 自动生成的调试签名（`build-profile.json5 → signingConfigs`），
+证书/Profile/密钥库位于 `C:\Users\Remote\.ohos\config\default_LightBearing_*`，
+**私钥材料不在仓库内**；仓库中只保留证书路径与 IDE 加密后的口令字段。
+
+- 构建签名 HAP：
+
+  ```bash
+  hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
+  ```
+
+- 真机安装（MIA-AL00，`4EE9K25515007252`）实测：
+
+  ```bash
+  hdc -t 4EE9K25515007252 install -r entry-default-signed.hap    # msg:install bundle successfully.
+  hdc -t 4EE9K25515007252 shell aa start -a EntryAbility -b com.hhyxx.LightBearing
+  ```
+
+  **注意**：真机处于开发者模式时，系统不会自动解锁屏幕，启动会返回
+  `10106102 The device screen is locked during the application launch`。
+  需要先手动点亮并解锁手机屏幕，再执行启动命令。
+
 - 模拟器接受未签名 HAP，可直接安装验证：
 
   ```bash
   hdc -t 127.0.0.1:5555 install -r entry-default-unsigned.hap
-  hdc -t 127.0.0.1:5555 shell aa start -a EntryAbility -b com.hhyxx.lightbearing
+  hdc -t 127.0.0.1:5555 shell aa start -a EntryAbility -b com.hhyxx.LightBearing
   ```
 
-- **真机（MIA-AL00）拒绝安装**，实测报错：
-  `failed to install bundle. code:9568320 error: no signature file.`
-  这是签名缺失导致，不是代码问题。真机安装需要：
-  1. 在 AppGallery Connect 为 `com.hhyxx.lightbearing` 申请调试证书与 Profile（个人开发者即可）；
-  2. 在 DevEco Studio → Project Structure → Signing Configs 中勾选自动签名并登录华为开发者账号；
-  3. 重新构建已签名 HAP 后安装。
-
-  签名材料属于账号私有凭据，未纳入仓库。
+- 若包名与签名 profile 不一致（DevEco 自动签名会写死当时的 bundleName），
+  构建会报 `The bundleName in app.json5 ... does not match the bundleName in the generated SigningConfigs`，
+  此时需在 Project Structure → Signing Configs 重新生成签名，或让两侧包名对齐。
 
 ## 3. 运行与功能入口
 
