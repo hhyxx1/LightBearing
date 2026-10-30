@@ -165,9 +165,11 @@ export struct SettingsPage {
       .width('100%')
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 

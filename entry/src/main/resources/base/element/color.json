@@ -34,7 +34,35 @@
     },
     {
       "name": "lb_line",
-      "value": "#CFDCE4"
+      "value": "#D6E1E8"
+    },
+    {
+      "name": "lb_on_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "lb_nav_active_bg",
+      "value": "#219C5A08"
+    },
+    {
+      "name": "lb_nav_active_border",
+      "value": "#6B9C5A08"
+    },
+    {
+      "name": "lb_chip_bg",
+      "value": "#1A9C5A08"
+    },
+    {
+      "name": "lb_chip_border",
+      "value": "#599C5A08"
+    },
+    {
+      "name": "lb_iconbox_bg",
+      "value": "#269C5A08"
+    },
+    {
+      "name": "lb_hero_glow",
+      "value": "#249C5A08"
     }
   ]
 }

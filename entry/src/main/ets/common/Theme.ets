@@ -7,11 +7,10 @@ const DOMAIN = 0x1005;
 const TAG = 'LB_THEME';
 
 /**
- * 设计 token。
+ * 设计 token —— 数值全部对齐设计稿 lightbearing_ui.html。
  *
  * 颜色统一走资源（resources/base|dark/element/color.json），由系统深浅色驱动；
- * 需要在 Canvas 里使用的场合，用 ThemeColors.load() 从资源管理器取真实色值，
- * 避免在代码中硬编码两套调色板导致不一致。
+ * 需要在 Canvas 里使用的场合，用 ThemeColors.load() 从资源管理器取真实色值。
  */
 export class Spacing {
   static readonly XS: number = 4;
@@ -23,20 +22,36 @@ export class Spacing {
   static readonly XXXL: number = 32;
 }
 
+/** 设计稿：.card 19 / .hero 24 / 按钮 chip 12 / .chip 40 / .stat 15 / .appicon 17 */
 export class Radius {
-  static readonly CARD: number = 16;
+  static readonly CARD: number = 19;
+  static readonly HERO: number = 24;
   static readonly BUTTON: number = 12;
-  static readonly CHIP: number = 999;
+  static readonly CHIP: number = 40;
+  static readonly STAT: number = 15;
+  static readonly ICONBOX: number = 12;
+  static readonly APPLOGO: number = 17;
 }
 
+/** 设计稿字级：.eyebrow 12 / .subtitle 14 / .card h3 14 / .small 12 / .stat b 24 / .pagetitle 29-42 */
 export class FontSize {
+  static readonly EYEBROW: number = 12;
   static readonly CAPTION: number = 11;
-  static readonly BODY: number = 14;
-  static readonly BODY_L: number = 16;
+  static readonly SMALL: number = 12;
+  static readonly BODY: number = 13;
+  static readonly BODY_L: number = 14;
   static readonly TITLE: number = 20;
-  static readonly H1: number = 28;
-  static readonly HERO: number = 32;
+  static readonly H1: number = 30;
+  static readonly HERO_H2: number = 22;
+  static readonly STAT: number = 24;
+  static readonly NAV: number = 13;
 }
+
+/** 设计稿 .navcaption / .caps：10px 大写 字距 2 */
+export const NAV_CAPTION_SIZE: number = 10;
+export const NAV_CAPTION_SPACING: number = 2;
+/** 设计稿 .eyebrow 字距 1.1 */
+export const EYEBROW_SPACING: number = 1.1;
 
 /** 触控热区下限 */
 export const MIN_TOUCH: number = 44;
@@ -75,7 +90,7 @@ export class ThemeColors {
     }
   }
 
-  /** ARGB 整数 → #RRGGBB（Canvas 不支持 alpha 时丢弃） */
+  /** ARGB 整数 → #RRGGBB（Canvas 不支持独立 alpha 通道） */
   static toHex(argb: number): string {
     const r = (argb >> 16) & 0xFF;
     const g = (argb >> 8) & 0xFF;

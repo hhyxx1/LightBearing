@@ -406,6 +406,12 @@ export class AppDb {
     await store.executeSql('DELETE FROM history');
   }
 
+  /** 只写一个键，避免把内存里的默认值整体落库（例如引导完成时不应固化 themeMode） */
+  static async saveSetting(key: string, value: string): Promise<void> {
+    const store = AppDb.requireStore();
+    await store.executeSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  }
+
   /** 数据库统计（设置页展示真实体积） */
   static async stats(): Promise<number[]> {
     const places = await AppDb.countOf('places');

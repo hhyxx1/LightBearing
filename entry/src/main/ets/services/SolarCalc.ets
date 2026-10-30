@@ -291,6 +291,26 @@ export class SolarCalc {
     }
   }
 
+  /** 阶段的简短标签（用于数值卡等窄空间） */
+  static phaseShort(phase: LightPhase): string {
+    switch (phase) {
+      case LightPhase.DAY:
+        return '白昼';
+      case LightPhase.GOLDEN:
+        return '黄金';
+      case LightPhase.BLUE:
+        return '蓝调';
+      case LightPhase.CIVIL:
+        return '民用';
+      case LightPhase.NAUTICAL:
+        return '航海';
+      case LightPhase.ASTRONOMICAL:
+        return '天文';
+      default:
+        return '夜间';
+    }
+  }
+
   /** 计算某日黄金/蓝调时间窗（UTC 毫秒）；dayStartLocalUtc 为本地日 00:00 的 UTC 时刻 */
   static lightWindows(dayStartLocalUtc: number, latDeg: number, lonDeg: number, th: LightThresholds): LightWindow {
     const w = new LightWindow();

@@ -122,3 +122,58 @@ code:9568320 error: no signature file.
 机位库与首页的定位入口返回失败原因并引导手动输入，太阳计算、日轨、反向搜索、
 计划、日历、比较、导出（本地文件）全部照常工作。该路径通过「不授权定位 + 手动坐标」
 组合实测覆盖。
+
+## 6. 设计走查（视觉与图标改版）
+
+初版实现与 `lightbearing_ui.html` 存在两处明确偏差，已修复：
+
+| 问题 | 初版 | 现版 |
+|---|---|---|
+| 图标 | 使用 emoji/字体符号（☀ ⚙ ▣ ◠ ⋯ ⚠ 等），系统渲染为彩色 emoji，与设计稿的线性图标语言不符 | `tools/icon-gen/make_icons.py` 复用设计稿 `PATHS` 的 24×24 描边 path，生成 60 个图标 × 深浅两套（共 120 个 SVG）；全部 emoji 已清零（`grep` 校验 0 命中） |
+| 配色与版式 | 浅底 + 棕色调，圆角/间距未对齐设计稿 | 深底 `#0D1A29` + 琥珀 `#FFBC6B` + 青 `#73D9D5` 为默认主题；`.card` 19 / `.hero` 24 / `.chip` 40 / `.stat` 15 / `.iconbox` 40×40 / 按钮 12；eyebrow 12 字距 1.1；卡片 1px `rgba(226,246,255,.12)` 线框；hero 125° 渐变 + 右上 35px 装饰环；`.navcaption` 与 `.helpmeta` 同样还原 |
+
+改版过程中修掉的自身缺陷：
+- 数值卡数值被截断为 `26…`（真机 1224px 宽下三列过窄）→ `.maxFontSize/.minFontSize + MAX_LINES_FIRST`，阶段改用短标签（白昼/黄金/蓝调/民用/航海/天文/夜间）。
+- hero 装饰环压到正文 → `translate({x:128, y:-150})` 推到右上角外并裁切。
+- 页头 eyebrow 换行 → 收短为 `LIGHTBEARING · API 26` 并单行省略。
+- 底部导航「更多」三点过细发黑 → 该图标单独用 stroke-width 3.4。
+- 已完成引导会连带把默认 `themeMode` 落库，导致新默认深色不生效 → 引导只写 `onboarded` 单键。
+
+真机（MIA-AL00，API 26）实拍证据：`docs/screenshots/20_redesign_home.jpeg`、
+`21_redesign_sunpath.jpeg`、`22_redesign_settings.jpeg`、`23_redesign_more.jpeg`。
+
+仍与设计稿有意的差异（保留并说明）：
+1. 手机底部导航比设计稿 `.mobiletabs` 多显示图标（设计稿移动端 `svg{display:none}`）——实测图标更易辨识，属于可读性取舍。
+2. hero 装饰环用 `Circle.strokeWidth(35)` 近似 `.hero:after` 的 35px 边框环，颜色取主色 14%，未做逐像素还原。
+3. 浅色主题是设计稿之外的补充（PRD 要求），数值为同语义浅底等价物，未遵循设计稿（设计稿仅深色）。
+
+## 7. 主题三态与页面转场（复审修正）
+
+### 7.1 主题三态
+
+初版把默认主题强行设为深色，导致「跟随系统」在浅色系统下仍显示深色，语义被破坏。已修正：
+
+- 默认值回到 `themeMode = 0`（跟随系统）；`深色` 只表示深色，`浅色` 只表示浅色。
+- `Theme.apply()` 分别映射到 `COLOR_MODE_NOT_SET / DARK / LIGHT`，资源经 `resources/base` 与 `resources/dark` 切换。
+- 引导完成只写 `onboarded` 单键（此前会把内存里的默认 `themeMode` 一并落库，导致默认值改动对老安装无效）。
+
+真机（MIA-AL00，系统为浅色）逐态实测，用页面中部背景平均亮度客观判定：
+
+| 操作 | 截图 | 平均亮度 | 结论 |
+|---|---|---|---|
+| 跟随系统 | `24_theme_follow.jpeg` | 244.3 | 浅色 ✅ |
+| 深色 | `25_theme_dark.jpeg` | 45.1 | 深色 ✅ |
+| 浅色 | `26_theme_light.jpeg` | 244.3 | 浅色 ✅ |
+| 切回跟随系统 | `27_theme_follow_again.jpeg` | 244.3 | 能恢复跟随系统 ✅ |
+
+### 7.2 页面转场
+
+初版一级导航切换用 `clear()` + `pushPathByName()`，会先播「退回内容区」再播「推入」，表现为双段动画/抖动。已修正：
+
+- 一级入口（今日/轨迹/计划/设置/更多）：`replacePathByName(route, '', false)`（在内容区时用 `pushPathByName(route, '', false)`），**原地切换、无动画**。
+- 二级页面（反向寻光/机位库/罗盘/地图/日历/比较）：`clear(false)` 后 `pushPathByName(route, '', true)`，只播一次正常推入转场。
+- 返回：`pop(true)`；回到首页：`clear(false)`。
+
+说明：转场是逐帧动画，截图无法作为证据，此处记录的是实现依据（`NavPathStack` 的 `animated` 参数）与实机点按观察结论。
+
+

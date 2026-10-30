@@ -1,56 +1,230 @@
-import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
+import {
+  FontSize, Radius, Spacing, MIN_TOUCH, NAV_CAPTION_SIZE, NAV_CAPTION_SPACING, EYEBROW_SPACING
+} from '../common/Theme';
 import { promptAction } from '@kit.ArkUI';
 
-/** 页头 */
+/**
+ * 可复用组件 —— 视觉严格对齐设计稿 lightbearing_ui.html：
+ * .eyebrow / .pagetitle / .subtitle / .hero / .card / .chip / .stat /
+ * .listitem / .iconbox / .field / .toggle / .helpmeta / .btn(.primary|.ghost)
+ */
+
+/** 页头：eyebrow + 标题 + 副标题（对应 .eyebrow + .pagetitle + .subtitle） */
 @Component
 export struct TopBar {
   @Prop title: string = '';
   @Prop subtitle: string = '';
+  @Prop eyebrowText: string = 'LIGHTBEARING · API 26';
+  @Prop chipText: string = '';
 
   build() {
-    Column({ space: Spacing.XS }) {
+    Column({ space: Spacing.S }) {
+      Row({ space: Spacing.M }) {
+        Text(this.eyebrowText)
+          .fontSize(FontSize.EYEBROW)
+          .fontWeight(FontWeight.Bold)
+          .letterSpacing(EYEBROW_SPACING)
+          .fontColor($r('app.color.lb_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        if (this.chipText.length > 0) {
+          Text(`•  ${this.chipText}`)
+            .fontSize(FontSize.CAPTION)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.lb_primary'))
+            .padding({ left: Spacing.M, right: Spacing.M, top: 5, bottom: 5 })
+            .borderRadius(Radius.CHIP)
+            .backgroundColor($r('app.color.lb_chip_bg'))
+            .borderWidth(1)
+            .borderColor($r('app.color.lb_chip_border'))
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
       Text(this.title)
         .fontSize(FontSize.H1)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.lb_ink'))
+        .width('100%')
         .maxLines(2)
       if (this.subtitle.length > 0) {
         Text(this.subtitle)
-          .fontSize(FontSize.BODY)
+          .fontSize(FontSize.BODY_L)
           .fontColor($r('app.color.lb_muted'))
+          .lineHeight(24)
+          .width('100%')
       }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .padding({ left: Spacing.L, right: Spacing.L, top: Spacing.M, bottom: Spacing.M })
+    .padding({ left: Spacing.XL, right: Spacing.XL, top: Spacing.XL, bottom: Spacing.L })
   }
 }
 
-/** 数据卡片容器 */
+/** 顶部主视觉（对应 .hero：125° 渐变 + 右上装饰环） */
+@Component
+export struct HeroCard {
+  @Prop heroTitle: string = '';
+  @Prop heroBody: string = '';
+  @Prop primaryLabel: string = '';
+  @Prop ghostLabel: string = '';
+
+  onPrimary: () => void = () => {
+  };
+  onGhost: () => void = () => {
+  };
+
+  build() {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      // 装饰环（对应 .hero:after：35px 粗描边圆环，只从右上角探出，溢出裁切）
+      Circle()
+        .width(220)
+        .height(220)
+        .fill(Color.Transparent)
+        .stroke($r('app.color.lb_hero_glow'))
+        .strokeWidth(35)
+        .translate({ x: 128, y: -150 })
+
+      Column({ space: Spacing.S }) {
+        Text(heroEyebrow())
+          .fontSize(FontSize.EYEBROW)
+          .fontWeight(FontWeight.Bold)
+          .letterSpacing(EYEBROW_SPACING)
+          .fontColor($r('app.color.lb_primary'))
+        Text(this.heroTitle)
+          .fontSize(FontSize.HERO_H2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.lb_ink'))
+          .width('100%')
+        Text(this.heroBody)
+          .fontSize(FontSize.BODY)
+          .fontColor($r('app.color.lb_muted'))
+          .lineHeight(23)
+          .width('100%')
+        if (this.primaryLabel.length > 0 || this.ghostLabel.length > 0) {
+          Row({ space: Spacing.M }) {
+            if (this.primaryLabel.length > 0) {
+              Button(this.primaryLabel)
+                .type(ButtonType.Normal)
+                .height(MIN_TOUCH)
+                .borderRadius(Radius.BUTTON)
+                .backgroundColor($r('app.color.lb_primary'))
+                .fontColor($r('app.color.lb_on_primary'))
+                .fontSize(FontSize.BODY)
+                .fontWeight(FontWeight.Bold)
+                .padding({ left: Spacing.L, right: Spacing.L })
+                .onClick(() => {
+                  this.onPrimary();
+                })
+            }
+            if (this.ghostLabel.length > 0) {
+              Button(this.ghostLabel)
+                .type(ButtonType.Normal)
+                .height(MIN_TOUCH)
+                .borderRadius(Radius.BUTTON)
+                .backgroundColor(Color.Transparent)
+                .fontColor($r('app.color.lb_ink'))
+                .fontSize(FontSize.BODY)
+                .fontWeight(FontWeight.Bold)
+                .borderWidth(1)
+                .borderColor($r('app.color.lb_line'))
+                .padding({ left: Spacing.L, right: Spacing.L })
+                .onClick(() => {
+                  this.onGhost();
+                })
+            }
+          }
+          .width('100%')
+          .margin({ top: Spacing.S })
+          .justifyContent(FlexAlign.Start)
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: Spacing.XXL, right: Spacing.XXL, top: Spacing.XXL, bottom: Spacing.XXL })
+      .width('100%')
+    }
+    .width('100%')
+    .borderRadius(Radius.HERO)
+    .backgroundColor($r('app.color.lb_panel'))
+    .linearGradient({
+      angle: 125,
+      colors: [[$r('app.color.lb_hero_glow'), 0.0], [$r('app.color.lb_panel'), 1.0]]
+    })
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .clip(true)
+  }
+}
+
+/** 该文案与设计稿 .hero .eyebrow 一致，并与页头 eyebrow 保持同一口径 */
+function heroEyebrow(): string {
+  return 'LIGHTBEARING · API 26';
+}
+
+/** 数据卡片（对应 .card：圆角 19，panel 底，1px 线框，padding 20） */
 @Component
 export struct SectionCard {
   @Prop cardTitle: string = '';
   @BuilderParam content: () => void;
 
   build() {
-    Column({ space: Spacing.M }) {
+    Column({ space: Spacing.L }) {
       if (this.cardTitle.length > 0) {
         Text(this.cardTitle)
           .fontSize(FontSize.BODY_L)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.lb_ink'))
+          .width('100%')
       }
       this.content()
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
   }
 }
 
-/** 状态徽标 */
+/** 指标卡（对应 .stat：数值 24，标签 11 muted） */
+@Component
+export struct MetricTile {
+  @Prop valueText: string = '--';
+  @Prop labelText: string = '';
+  @Prop highlight: boolean = false;
+
+  build() {
+    Column({ space: Spacing.S }) {
+      Text(this.valueText)
+        .fontSize(FontSize.STAT)
+        .maxFontSize(FontSize.STAT)
+        .minFontSize(12)
+        .heightAdaptivePolicy(TextHeightAdaptivePolicy.MAX_LINES_FIRST)
+        .fontWeight(FontWeight.Bolder)
+        .fontColor(this.highlight ? $r('app.color.lb_primary') : $r('app.color.lb_ink'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(this.labelText)
+        .fontSize(FontSize.CAPTION)
+        .fontColor($r('app.color.lb_muted'))
+        .maxLines(2)
+        .textAlign(TextAlign.Start)
+    }
+    .layoutWeight(1)
+    .padding({ left: Spacing.L, right: Spacing.L, top: Spacing.L, bottom: Spacing.L })
+    .backgroundColor($r('app.color.lb_panel'))
+    .borderRadius(Radius.STAT)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+
+/** 状态芯片（对应 .chip：主色 35% 描边 + 10% 底 + 40 圆角） */
 @Component
 export struct StatusBadge {
   @Prop label: string = '';
@@ -67,73 +241,76 @@ export struct StatusBadge {
   }
 
   build() {
-    Text(this.label)
-      .fontSize(FontSize.CAPTION)
-      .fontColor(this.tint())
-      .padding({ left: Spacing.S, right: Spacing.S, top: 3, bottom: 3 })
-      .borderRadius(Radius.CHIP)
-      .borderWidth(1)
-      .borderColor(this.tint())
+    Row({ space: 6 }) {
+      Text('•')
+        .fontSize(FontSize.CAPTION)
+        .fontColor(this.tint())
+      Text(this.label)
+        .fontSize(FontSize.CAPTION)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.tint())
+    }
+    .padding({ left: Spacing.M, right: Spacing.M, top: 5, bottom: 5 })
+    .borderRadius(Radius.CHIP)
+    .backgroundColor($r('app.color.lb_chip_bg'))
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_chip_border'))
+    .alignItems(VerticalAlign.Center)
   }
 }
 
-/** 指标卡：数值 + 说明 */
+/** 图标容器（对应 .iconbox：40×40，主色 15% 底，圆角 12） */
 @Component
-export struct MetricTile {
-  @Prop valueText: string = '--';
-  @Prop labelText: string = '';
-  @Prop highlight: boolean = false;
+export struct IconBox {
+  @Prop boxSize: number = 40;
+  src: Resource = $r('app.media.ic_sun_primary');
 
   build() {
-    Column({ space: Spacing.XS }) {
-      Text(this.valueText)
-        .fontSize(22)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.highlight ? $r('app.color.lb_primary') : $r('app.color.lb_ink'))
-        .maxLines(1)
-      Text(this.labelText)
-        .fontSize(FontSize.CAPTION)
-        .fontColor($r('app.color.lb_muted'))
-        .maxLines(2)
-        .textAlign(TextAlign.Center)
+    Stack({ alignContent: Alignment.Center }) {
+      Image(this.src)
+        .width(this.boxSize * 0.48)
+        .height(this.boxSize * 0.48)
+        .objectFit(ImageFit.Contain)
     }
-    .layoutWeight(1)
-    .padding(Spacing.M)
-    .backgroundColor($r('app.color.lb_panel2'))
-    .borderRadius(Radius.BUTTON)
-    .alignItems(HorizontalAlign.Center)
+    .width(this.boxSize)
+    .height(this.boxSize)
+    .backgroundColor($r('app.color.lb_iconbox_bg'))
+    .borderRadius(Radius.ICONBOX)
   }
 }
 
-/** 空态 */
+/** 空态：图标 + 标题 + 说明 + 主按钮 */
 @Component
 export struct EmptyState {
   @Prop title: string = '尚无数据';
   @Prop description: string = '';
   @Prop actionLabel: string = '';
+  iconSrc: Resource = $r('app.media.ic_sun_primary');
   onAction: () => void = () => {
   };
 
   build() {
-    Column({ space: Spacing.M }) {
-      Text('☀')
-        .fontSize(42)
-        .fontColor($r('app.color.lb_muted'))
+    Column({ space: Spacing.L }) {
+      IconBox({ boxSize: 56, src: this.iconSrc })
       Text(this.title)
         .fontSize(FontSize.BODY_L)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.lb_ink'))
       Text(this.description)
-        .fontSize(FontSize.BODY)
+        .fontSize(FontSize.SMALL)
         .fontColor($r('app.color.lb_muted'))
         .textAlign(TextAlign.Center)
+        .lineHeight(21)
       if (this.actionLabel.length > 0) {
         Button(this.actionLabel)
           .type(ButtonType.Normal)
           .borderRadius(Radius.BUTTON)
           .backgroundColor($r('app.color.lb_primary'))
-          .fontColor($r('app.color.lb_bg'))
+          .fontColor($r('app.color.lb_on_primary'))
+          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.BODY)
           .height(MIN_TOUCH)
+          .padding({ left: Spacing.XL, right: Spacing.XL })
           .onClick(() => {
             this.onAction();
           })
@@ -143,11 +320,13 @@ export struct EmptyState {
     .padding(Spacing.XXL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Center)
   }
 }
 
-/** 错误卡：错误说明 + 重试 */
+/** 错误卡：警告图标 + 说明 + 重试/返回 */
 @Component
 export struct ErrorCard {
   @Prop message: string = '';
@@ -158,21 +337,22 @@ export struct ErrorCard {
   };
 
   build() {
-    Column({ space: Spacing.M }) {
-      Row({ space: Spacing.S }) {
-        Text('⚠')
-          .fontSize(FontSize.BODY_L)
-          .fontColor($r('app.color.lb_primary'))
+    Column({ space: Spacing.L }) {
+      Row({ space: Spacing.M }) {
+        IconBox({ boxSize: 36, src: $r('app.media.ic_warning_primary') })
         Text('出现问题')
           .fontSize(FontSize.BODY_L)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.lb_ink'))
+          .layoutWeight(1)
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       Text(this.message)
-        .fontSize(FontSize.BODY)
+        .fontSize(FontSize.SMALL)
         .fontColor($r('app.color.lb_muted'))
+        .lineHeight(21)
         .width('100%')
 
       Row({ space: Spacing.M }) {
@@ -180,7 +360,9 @@ export struct ErrorCard {
           .type(ButtonType.Normal)
           .borderRadius(Radius.BUTTON)
           .backgroundColor($r('app.color.lb_primary'))
-          .fontColor($r('app.color.lb_bg'))
+          .fontColor($r('app.color.lb_on_primary'))
+          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.BODY)
           .height(MIN_TOUCH)
           .layoutWeight(1)
           .onClick(() => {
@@ -191,7 +373,11 @@ export struct ErrorCard {
           .borderRadius(Radius.BUTTON)
           .backgroundColor($r('app.color.lb_panel2'))
           .fontColor($r('app.color.lb_ink'))
+          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.BODY)
           .height(MIN_TOUCH)
+          .borderWidth(1)
+          .borderColor($r('app.color.lb_line'))
           .layoutWeight(1)
           .onClick(() => {
             this.onBack();
@@ -200,14 +386,16 @@ export struct ErrorCard {
       .width('100%')
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 }
 
-/** 权限教育门：说明为什么需要，并提供降级入口 */
+/** 权限教育门 */
 @Component
 export struct PermissionGate {
   @Prop title: string = '需要权限';
@@ -220,20 +408,31 @@ export struct PermissionGate {
   };
 
   build() {
-    Column({ space: Spacing.M }) {
-      Text(this.title)
-        .fontSize(FontSize.BODY_L)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.lb_ink'))
+    Column({ space: Spacing.L }) {
+      Row({ space: Spacing.M }) {
+        IconBox({ boxSize: 36, src: $r('app.media.ic_location_current_primary') })
+        Text(this.title)
+          .fontSize(FontSize.BODY_L)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.lb_ink'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
       Text(this.reason)
-        .fontSize(FontSize.BODY)
+        .fontSize(FontSize.SMALL)
         .fontColor($r('app.color.lb_muted'))
+        .lineHeight(21)
+
       Row({ space: Spacing.M }) {
         Button(this.grantLabel)
           .type(ButtonType.Normal)
           .borderRadius(Radius.BUTTON)
           .backgroundColor($r('app.color.lb_primary'))
-          .fontColor($r('app.color.lb_bg'))
+          .fontColor($r('app.color.lb_on_primary'))
+          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.BODY)
           .height(MIN_TOUCH)
           .layoutWeight(1)
           .onClick(() => {
@@ -244,7 +443,11 @@ export struct PermissionGate {
           .borderRadius(Radius.BUTTON)
           .backgroundColor($r('app.color.lb_panel2'))
           .fontColor($r('app.color.lb_ink'))
+          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.BODY)
           .height(MIN_TOUCH)
+          .borderWidth(1)
+          .borderColor($r('app.color.lb_line'))
           .layoutWeight(1)
           .onClick(() => {
             this.onFallback();
@@ -254,19 +457,22 @@ export struct PermissionGate {
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
   }
 }
 
-/** 列表行 */
+/** 列表行（对应 .listitem：iconbox + 主/次文案 + ghost 按钮） */
 @Component
 export struct ListRow {
   @Prop primary: string = '';
   @Prop secondary: string = '';
   @Prop trailing: string = '';
   @Prop actionLabel: string = '查看';
+  iconSrc: Resource = $r('app.media.ic_note_primary');
   onTap: () => void = () => {
   };
   onAction: () => void = () => {
@@ -274,16 +480,20 @@ export struct ListRow {
 
   build() {
     Row({ space: Spacing.M }) {
+      IconBox({ boxSize: 40, src: this.iconSrc })
       Column({ space: Spacing.XS }) {
         Text(this.primary)
-          .fontSize(FontSize.BODY_L)
+          .fontSize(FontSize.BODY)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.lb_ink'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.secondary)
-          .fontSize(FontSize.CAPTION)
-          .fontColor($r('app.color.lb_muted'))
-          .maxLines(2)
+        if (this.secondary.length > 0) {
+          Text(this.secondary)
+            .fontSize(FontSize.CAPTION)
+            .fontColor($r('app.color.lb_muted'))
+            .maxLines(2)
+        }
         if (this.trailing.length > 0) {
           Text(this.trailing)
             .fontSize(FontSize.CAPTION)
@@ -300,20 +510,27 @@ export struct ListRow {
         .type(ButtonType.Normal)
         .height(MIN_TOUCH)
         .borderRadius(Radius.BUTTON)
-        .backgroundColor($r('app.color.lb_panel2'))
+        .backgroundColor(Color.Transparent)
+        .borderWidth(1)
+        .borderColor($r('app.color.lb_line'))
         .fontColor($r('app.color.lb_ink'))
-        .fontSize(FontSize.CAPTION)
+        .fontSize(FontSize.SMALL)
+        .fontWeight(FontWeight.Bold)
         .onClick(() => {
           this.onAction();
         })
     }
     .width('100%')
-    .padding({ top: Spacing.M, bottom: Spacing.M })
+    .padding(Spacing.L)
+    .backgroundColor($r('app.color.lb_panel2'))
+    .borderRadius(Radius.BUTTON)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(VerticalAlign.Center)
   }
 }
 
-/** 标签输入行（数值） */
+/** 数值/文本输入（对应 .field：标签在上，输入 panel2 + 线框，圆角 11） */
 @Component
 export struct NumberField {
   @Prop label: string = '';
@@ -324,34 +541,41 @@ export struct NumberField {
   };
 
   build() {
-    Row({ space: Spacing.S }) {
-      Text(this.label)
-        .fontSize(FontSize.BODY)
-        .fontColor($r('app.color.lb_muted'))
-        .width(112)
+    Column({ space: Spacing.S }) {
+      Row() {
+        Text(this.label)
+          .fontSize(FontSize.SMALL)
+          .fontColor($r('app.color.lb_muted'))
+          .layoutWeight(1)
+        if (this.unit.length > 0) {
+          Text(this.unit)
+            .fontSize(FontSize.CAPTION)
+            .fontColor($r('app.color.lb_muted'))
+        }
+      }
+      .width('100%')
+
       TextInput({ text: this.valueText, placeholder: this.placeholder })
         .type(InputType.Normal)
-        .layoutWeight(1)
+        .width('100%')
         .height(MIN_TOUCH)
         .backgroundColor($r('app.color.lb_panel2'))
         .fontColor($r('app.color.lb_ink'))
+        .placeholderColor($r('app.color.lb_muted'))
+        .fontSize(FontSize.BODY)
         .borderRadius(Radius.BUTTON)
+        .borderWidth(1)
+        .borderColor($r('app.color.lb_line'))
         .onChange((value: string) => {
           this.onChangeText(value);
         })
-      if (this.unit.length > 0) {
-        Text(this.unit)
-          .fontSize(FontSize.CAPTION)
-          .fontColor($r('app.color.lb_muted'))
-          .width(28)
-      }
     }
     .width('100%')
-    .alignItems(VerticalAlign.Center)
+    .alignItems(HorizontalAlign.Start)
   }
 }
 
-/** 开关行 */
+/** 开关行（对应 .toggle：上下 12 间距 + 底线） */
 @Component
 export struct SwitchRow {
   @Prop label: string = '';
@@ -384,23 +608,26 @@ export struct SwitchRow {
     .width('100%')
     .constraintSize({ minHeight: MIN_TOUCH })
     .alignItems(VerticalAlign.Center)
-    .padding({ top: Spacing.S, bottom: Spacing.S })
+    .padding({ top: Spacing.M, bottom: Spacing.M })
+    .border({ width: { bottom: 1 }, color: $r('app.color.lb_line') })
   }
 }
 
-/** 提示条（用于「数据是本地计算」等诚实标注） */
+/** 提示条（对应 .helpmeta：左侧 2px 主色条 + 主色 6% 底） */
 @Component
 export struct NoticeBar {
   @Prop text: string = '';
 
   build() {
     Text(this.text)
-      .fontSize(FontSize.CAPTION)
+      .fontSize(FontSize.SMALL)
       .fontColor($r('app.color.lb_muted'))
+      .lineHeight(21)
       .width('100%')
-      .padding(Spacing.M)
-      .backgroundColor($r('app.color.lb_panel2'))
-      .borderRadius(Radius.BUTTON)
+      .padding({ left: Spacing.M, right: Spacing.M, top: Spacing.M, bottom: Spacing.M })
+      .backgroundColor($r('app.color.lb_chip_bg'))
+      .borderRadius(6)
+      .border({ width: { left: 2 }, color: $r('app.color.lb_primary') })
   }
 }
 
@@ -416,12 +643,38 @@ export struct LoadingBlock {
         .height(36)
         .color($r('app.color.lb_primary'))
       Text(this.label)
-        .fontSize(FontSize.BODY)
+        .fontSize(FontSize.SMALL)
         .fontColor($r('app.color.lb_muted'))
     }
     .width('100%')
     .padding(Spacing.XXL)
     .alignItems(HorizontalAlign.Center)
+  }
+}
+
+/** 导航项标题（对应 .navcaption：10px 大写 字距 2 bold muted） */
+@Component
+export struct NavCaption {
+  @Prop text: string = '';
+
+  build() {
+    Text(this.text)
+      .fontSize(NAV_CAPTION_SIZE)
+      .fontWeight(FontWeight.Bold)
+      .letterSpacing(NAV_CAPTION_SPACING)
+      .fontColor($r('app.color.lb_muted'))
+      .width('100%')
+      .padding({ left: Spacing.M, right: Spacing.M, top: Spacing.M, bottom: Spacing.M })
+  }
+}
+
+/** 分隔线（对应 .separator） */
+@Component
+export struct DividerLine {
+  build() {
+    Divider()
+      .strokeWidth(1)
+      .color($r('app.color.lb_line'))
   }
 }
 

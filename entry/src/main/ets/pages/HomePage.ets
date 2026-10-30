@@ -6,7 +6,7 @@ import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow } from '..
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
-  PermissionGate, ListRow, Dialogs } from '../components/Widgets';
+  PermissionGate, ListRow, HeroCard, Dialogs } from '../components/Widgets';
 import { SunPathChart } from '../components/Charts';
 
 /**
@@ -195,17 +195,19 @@ export struct HomePage {
           labelText: '太阳高度角'
         })
         MetricTile({
-          valueText: this.phaseLabel,
-          labelText: '当前光线阶段',
+          valueText: SolarCalc.phaseShort(this.phaseValue),
+          labelText: '光线阶段',
           highlight: this.phaseValue === 5
         })
       }
       .width('100%')
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -243,9 +245,11 @@ export struct HomePage {
         .fontColor($r('app.color.lb_muted'))
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -271,9 +275,11 @@ export struct HomePage {
       })
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -324,9 +330,11 @@ export struct HomePage {
       }
     }
     .width('100%')
-    .padding(Spacing.L)
+    .padding(Spacing.XL)
     .backgroundColor($r('app.color.lb_panel'))
     .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -377,7 +385,24 @@ export struct HomePage {
   build() {
     Scroll() {
       Column({ space: Spacing.M }) {
-        TopBar({ title: '今日光线', subtitle: '好光线，值得提前抵达' })
+        TopBar({
+          title: '今日光线',
+          subtitle: '当前位置或手动地点的今日时段与太阳高度/方位',
+          chipText: '本地计算'
+        })
+
+        HeroCard({
+          heroTitle: '好光线，值得提前抵达',
+          heroBody: '逐光按真实经纬度与时间计算太阳方位、日出日落与黄金/蓝调时刻，帮你提前定好机位和时刻。全部计算在本机完成，不联网、不埋点。',
+          primaryLabel: '反向查找好光线',
+          ghostLabel: '查看完整日轨',
+          onPrimary: () => {
+            this.onNavigate('reverse');
+          },
+          onGhost: () => {
+            this.onNavigate('sunpath');
+          }
+        })
 
         if (this.errorText.length > 0) {
           ErrorCard({
@@ -404,30 +429,6 @@ export struct HomePage {
           this.timeSection()
           this.eventsSection()
           this.planSection()
-
-          Row({ space: Spacing.M }) {
-            Button('反向查找好光线')
-              .type(ButtonType.Normal)
-              .height(MIN_TOUCH)
-              .borderRadius(Radius.BUTTON)
-              .backgroundColor($r('app.color.lb_primary'))
-              .fontColor($r('app.color.lb_bg'))
-              .layoutWeight(1)
-              .onClick(() => {
-                this.onNavigate('reverse');
-              })
-            Button('完整日轨')
-              .type(ButtonType.Normal)
-              .height(MIN_TOUCH)
-              .borderRadius(Radius.BUTTON)
-              .backgroundColor($r('app.color.lb_panel2'))
-              .fontColor($r('app.color.lb_ink'))
-              .layoutWeight(1)
-              .onClick(() => {
-                this.onNavigate('sunpath');
-              })
-          }
-          .width('100%')
         }
       }
       .width('100%')

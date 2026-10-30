@@ -74,7 +74,7 @@ export class ChecklistItem {
 
 /** 全局设置（键值化存储，字段可扩展） */
 export class AppSettings {
-  /** 0=跟随系统 1=深色 2=浅色 */
+  /** 0=跟随系统（默认） 1=深色 2=浅色；深色只表示深色，浅色只表示浅色 */
   themeMode: number = 0;
   /** 0=度 1=弧度 */
   angleUnit: number = 0;

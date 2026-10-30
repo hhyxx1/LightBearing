@@ -108,6 +108,40 @@ export NODE_HOME="/c/Program Files/Huawei/DevEco Studio/tools/node"
 只在用户点「使用当前位置 / 用当前位置」时**前台一次定位**；不申请后台定位、相机、媒体库写入；
 **不使用任何受限 ACL**。权限被拒后页面展示权限教育卡并提供手动坐标降级路径。
 
+### 3.2 视觉系统与图标
+
+视觉严格对齐 `lightbearing_ui.html` 的设计语言（数值取自其 CSS）：
+
+| 设计稿 | 实现 |
+|---|---|
+| `:root` 色板 `#0D1A29 / #182C3D / #213B4E / #FFBC6B / #73D9D5 / #F9FAF3 / #A2B9C5` | `resources/dark/element/color.json` 一一对应；浅色为同语义浅底等价物（AA 对比度） |
+| `.card` 19 / `.hero` 24 / 按钮 12 / `.chip` 40 / `.stat` 15 / `.appicon` 17 | `common/Theme.ets → Radius` |
+| `.eyebrow` 12 字距 1.1 / `.pagetitle` / `.subtitle` 14 / `.card h3` 14 / `.small` 12 / `.stat b` 24 | `common/Theme.ets → FontSize` + `components/Widgets.ets` |
+| `.hero` 125° 渐变 + 右上 35px 装饰环 | `HeroCard`（`linearGradient` + `Circle.strokeWidth(35)` 溢出裁切） |
+| `.chip` 主色 35% 描边 + 10% 底 | `StatusBadge` |
+| `.iconbox` 40×40 主色 15% 底 + 12 圆角 | `IconBox` |
+| `.helpmeta` 左侧 2px 主色条 | `NoticeBar` |
+| `.navbtn` 未选中 muted / 选中主色 13% 底 + 42% 描边 | 平板 `rail()` 与手机 `bottomBar()` |
+| `.navcaption` 10px 大写 字距 2 | 侧栏「PAGES / 页面」 |
+
+**图标**：不使用 emoji 或字体符号。`tools/icon-gen/make_icons.py` 直接复用设计稿 `PATHS` 里的
+24×24 线性 path（stroke 1.8、round 端点），按需要的语义色生成 SVG 到
+`resources/base/media/ic_*.svg` 与 `resources/dark/media/ic_*.svg`（深浅各一套，共 120 个文件）。
+之所以烘色进 SVG 而不用 `Image.fillColor`：该属性对 `fill="none"` 的描边图标不生效
+（见 `@ohos.arkui` image.d.ts 说明），用 `dark` 资源限定目录切换主题反而更可靠。
+
+**主题三态**：默认「跟随系统」，深色只表示深色、浅色只表示浅色——
+`Theme.apply()` 分别调用 `setColorMode(COLOR_MODE_NOT_SET / DARK / LIGHT)`，
+资源通过 `resources/base` 与 `resources/dark` 限定目录切换。
+
+真机（系统为浅色）逐态实测亮度（页面中部背景平均亮度）：跟随系统 244.3、深色 45.1、
+浅色 244.3、切回跟随系统 244.3（证明强制深色后仍能恢复为跟随系统）。
+
+**页面转场**：一级入口（今日/轨迹/计划/设置/更多）之间用
+`replacePathByName(route, '', false)` / `pushPathByName(route, '', false)` **原地切换、无动画**，
+不再出现「先退一屏再进一屏」的双段转场；二级页面（反向寻光、机位库、罗盘、地图、日历、比较）
+保留一次正常的推入转场，返回用 `pop(true)`。
+
 ## 4. 数据模型与持久化
 
 - `places`（机位）、`plans`（拍摄计划）、`settings`（键值设置）、`history`（操作历史）。
@@ -205,7 +239,8 @@ entry/src/main/ets/
 entry/src/test/                       宿主机单元测试
 entry/src/ohosTest/                   端到端 / UI 自动化测试
 tools/solar-check/                    算法外部交叉验证（Node）
-tools/icon-gen/                       应用图标生成（PIL，输出 SVG + PNG）
+tools/icon-gen/make_icons.py          线性图标生成（复用设计稿 path，输深浅两套 SVG）
+tools/icon-gen/make_icon.py           应用图标生成（PIL，输出 SVG + PNG）
 docs/icon/                            1024×1024 图标与 SVG 矢量源
 docs/screenshots/                     模拟器实拍截图
 ```
