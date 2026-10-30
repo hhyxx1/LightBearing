@@ -24,6 +24,17 @@ export class AppState {
   static ready: boolean = false;
   /** 上次错误（用于错误态展示与重试） */
   static lastError: string = '';
+  /** 是否有未保存的表单编辑（非空即未保存，内容用于提示文案） */
+  static dirtyForm: string = '';
+
+  /** 标记有未保存编辑；返回时会明确提示 */
+  static markDirty(label: string): void {
+    AppState.dirtyForm = label;
+  }
+
+  static clearDirty(): void {
+    AppState.dirtyForm = '';
+  }
 
   static async bootstrap(context: common.Context): Promise<void> {
     if (AppState.ready) {

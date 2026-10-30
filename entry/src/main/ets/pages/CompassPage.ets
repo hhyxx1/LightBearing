@@ -5,7 +5,7 @@ import { Place } from '../model/Models';
 import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { SensorService, CompassReading } from '../services/SensorService';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, MetricTile, PermissionGate, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, MetricTile, PermissionGate, SkeletonCard, Dialogs } from '../components/Widgets';
 import { CompassDial } from '../components/Charts';
 
 /**
@@ -144,7 +144,11 @@ export struct CompassPage {
             }
           })
         } else if (!this.ready) {
-          Text('读取中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else if (!this.hasPlace) {
           EmptyState({
             title: '还没有机位',

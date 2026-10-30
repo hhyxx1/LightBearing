@@ -5,7 +5,7 @@ import { Place } from '../model/Models';
 import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 import { CompareChart, CompareSeries } from '../components/Charts';
 
 /** 对照行：某本地时刻在某日期的方位/高度 */
@@ -173,7 +173,11 @@ export struct ComparePage {
             }
           })
         } else if (!this.ready) {
-          Text('计算中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else if (!this.hasPlace) {
           EmptyState({
             title: '还没有机位',

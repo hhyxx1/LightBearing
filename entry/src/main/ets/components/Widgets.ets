@@ -206,6 +206,7 @@ export struct MetricTile {
         .heightAdaptivePolicy(TextHeightAdaptivePolicy.MAX_LINES_FIRST)
         .fontWeight(FontWeight.Bolder)
         .fontColor(this.highlight ? $r('app.color.lb_primary') : $r('app.color.lb_ink'))
+        .fontFeature('"tnum" 1')
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Text(this.labelText)
@@ -628,6 +629,41 @@ export struct NoticeBar {
       .backgroundColor($r('app.color.lb_chip_bg'))
       .borderRadius(6)
       .border({ width: { left: 2 }, color: $r('app.color.lb_primary') })
+  }
+}
+
+/** 骨架屏占位条（任务书要求 Loading 态必须有骨架屏，而不是只有转圈） */
+@Component
+export struct SkeletonBar {
+  @Prop barWidth: string = '100%';
+  @Prop barHeight: number = 14;
+
+  build() {
+    Row()
+      .width(this.barWidth)
+      .height(this.barHeight)
+      .backgroundColor($r('app.color.lb_panel2'))
+      .borderRadius(6)
+  }
+}
+
+/** 骨架屏卡片：标题条 + 三条内容条，模拟真实卡片密度 */
+@Component
+export struct SkeletonCard {
+  build() {
+    Column({ space: Spacing.M }) {
+      SkeletonBar({ barWidth: '38%', barHeight: 18 })
+      SkeletonBar({ barWidth: '100%' })
+      SkeletonBar({ barWidth: '86%' })
+      SkeletonBar({ barWidth: '64%' })
+    }
+    .alignItems(HorizontalAlign.Start)
+    .width('100%')
+    .padding(Spacing.XL)
+    .backgroundColor($r('app.color.lb_panel'))
+    .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
   }
 }
 

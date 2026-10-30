@@ -6,7 +6,7 @@ import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { ExportService, ExportResult } from '../services/ExportService';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
 /** 清单编码：每行 `1|文本` 或 `0|文本`，避免 JSON 强转带来的类型问题 */
 export function encodeChecklist(items: ChecklistItem[]): string {
@@ -53,6 +53,9 @@ export struct PlannerPage {
   @State ready: boolean = false;
   @State errorText: string = '';
   @State plans: ShootPlan[] = [];
+  /** 刚删除的计划，用于页面内撤销 */
+  @State undoPlan: ShootPlan | undefined = undefined;
+  @State undoLabel: string = '';
   @State places: Place[] = [];
   @State editing: boolean = false;
   @State editId: string = '';
@@ -104,6 +107,7 @@ export struct PlannerPage {
       return;
     }
     this.editing = true;
+    AppState.markDirty('拍摄计划编辑');
     this.editId = '';
     this.placeIndex = 0;
     const place = this.places[0];
@@ -123,6 +127,7 @@ export struct PlannerPage {
 
   private startEdit(plan: ShootPlan): void {
     this.editing = true;
+    AppState.markDirty('拍摄计划编辑');
     this.editId = plan.id;
     let idx = 0;
     for (let i = 0; i < this.places.length; i++) {
@@ -191,6 +196,7 @@ export struct PlannerPage {
       await AppState.reloadData();
       this.plans = AppState.plans;
       this.editing = false;
+      AppState.clearDirty();
       this.hint = '已保存。';
       Dialogs.toast(this.getUIContext(), '计划已保存');
     } catch (err) {
@@ -204,11 +210,73 @@ export struct PlannerPage {
         AppDb.deletePlan(plan.id).then(async () => {
           await AppState.reloadData();
           this.plans = AppState.plans;
-          Dialogs.toast(this.getUIContext(), '已删除');
+          // 危险动作可撤销：页面内撤销条，避免连续弹两个系统对话框
+          this.undoPlan = plan;
+          this.undoLabel = `已删除 ${TimeUtil.formatDate(plan.tzId, plan.selectedUtc)} 的计划`;
         }).catch((err: Error) => {
           this.hint = `删除失败：${err.message}`;
         });
       });
+  }
+
+  private async undoPlanDelete(): Promise<void> {
+    const target = this.undoPlan;
+    if (target === undefined) {
+      return;
+    }
+    try {
+      await AppDb.savePlan(target, `撤销删除并恢复计划 · ${target.placeName}`);
+      this.undoPlan = undefined;
+      this.undoLabel = '';
+      await AppState.reloadData();
+      this.plans = AppState.plans;
+      Dialogs.toast(this.getUIContext(), '已恢复计划');
+    } catch (err) {
+      this.hint = `恢复失败：${(err as Error).message}`;
+    }
+  }
+
+  @Builder
+  undoBar() {
+    Row({ space: Spacing.M }) {
+      Image($r('app.media.ic_history_muted'))
+        .width(18)
+        .height(18)
+        .objectFit(ImageFit.Contain)
+      Text(this.undoLabel)
+        .fontSize(FontSize.SMALL)
+        .fontColor($r('app.color.lb_ink'))
+        .layoutWeight(1)
+      Button('撤销')
+        .type(ButtonType.Normal)
+        .height(36)
+        .fontSize(FontSize.SMALL)
+        .fontWeight(FontWeight.Bold)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor($r('app.color.lb_primary'))
+        .fontColor($r('app.color.lb_on_primary'))
+        .onClick(() => {
+          this.undoPlanDelete();
+        })
+      Button('关闭')
+        .type(ButtonType.Normal)
+        .height(36)
+        .fontSize(FontSize.SMALL)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor(Color.Transparent)
+        .fontColor($r('app.color.lb_muted'))
+        .onClick(() => {
+          this.undoPlan = undefined;
+          this.undoLabel = '';
+        })
+    }
+    .width('100%')
+    .padding(Spacing.M)
+    .backgroundColor($r('app.color.lb_panel2'))
+    .borderRadius(Radius.BUTTON)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .alignItems(VerticalAlign.Center)
   }
 
   private addChecklistItem(): void {
@@ -425,6 +493,7 @@ export struct PlannerPage {
           .fontColor($r('app.color.lb_ink'))
           .onClick(() => {
             this.editing = false;
+            AppState.clearDirty();
           })
       }
       .width('100%')
@@ -463,7 +532,11 @@ export struct PlannerPage {
             }
           })
         } else if (!this.ready) {
-          Text('读取中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else {
           if (!this.editing) {
             Row({ space: Spacing.S }) {
@@ -494,6 +567,10 @@ export struct PlannerPage {
 
           if (this.editing) {
             this.editor()
+          }
+
+          if (this.undoPlan !== undefined) {
+            this.undoBar()
           }
 
           if (this.plans.length === 0 && !this.editing) {

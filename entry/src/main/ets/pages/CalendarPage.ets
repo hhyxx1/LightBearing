@@ -7,7 +7,7 @@ import { Place, ShootPlan } from '../model/Models';
 import { SolarCalc, SolarEvents, LightWindow } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { ExportService, ExportResult } from '../services/ExportService';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
 /** 月历单元格 */
 class DayCell {
@@ -284,7 +284,11 @@ export struct CalendarPage {
             }
           })
         } else if (!this.ready) {
-          Text('计算中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else if (!this.hasPlace) {
           EmptyState({
             title: '还没有机位',

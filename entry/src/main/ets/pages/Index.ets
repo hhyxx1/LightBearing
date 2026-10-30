@@ -4,6 +4,7 @@ import {
   FontSize, Radius, Spacing, MIN_TOUCH, NAV_CAPTION_SIZE, NAV_CAPTION_SPACING, Theme
 } from '../common/Theme';
 import { AppDb } from '../repository/AppDb';
+import { Dialogs } from '../components/Widgets';
 import { HomePage } from './HomePage';
 import { SunPathPage } from './SunPathPage';
 import { ReversePage } from './ReversePage';
@@ -123,7 +124,21 @@ struct Index {
     return route === 'sunpath' || route === 'planner' || route === 'settings' || route === 'more';
   }
 
+  /** 统一导航入口：有未保存编辑时先明确确认，再真正跳转 */
   private go(route: string): void {
+    if (AppState.dirtyForm.length > 0 && route !== this.currentRoute) {
+      const label = AppState.dirtyForm;
+      Dialogs.confirm(this.getUIContext(), '放弃未保存的编辑？',
+        `${label}还没有保存，离开将丢弃本次输入。`, '放弃并离开', () => {
+          AppState.clearDirty();
+          this.navigateTo(route);
+        });
+      return;
+    }
+    this.navigateTo(route);
+  }
+
+  private navigateTo(route: string): void {
     if (route === 'home') {
       // 回到内容区：关闭动画，避免先倒退再前进的抖动
       this.pathStack.clear(false);
@@ -247,6 +262,19 @@ struct Index {
     }
     .hideTitleBar(true)
     .backgroundColor($r('app.color.lb_bg'))
+    .onBackPressed(() => {
+      // 有未保存的表单编辑时明确提示，而不是静默丢弃
+      if (AppState.dirtyForm.length > 0) {
+        const label = AppState.dirtyForm;
+        Dialogs.confirm(this.getUIContext(), '放弃未保存的编辑？',
+          `${label}还没有保存，返回将丢弃本次输入。`, '放弃并返回', () => {
+            AppState.clearDirty();
+            this.back();
+          });
+        return true;
+      }
+      return false;
+    })
   }
 
   @Builder

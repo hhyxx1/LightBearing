@@ -6,7 +6,7 @@ import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow } from '..
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
-  PermissionGate, ListRow, HeroCard, Dialogs } from '../components/Widgets';
+  PermissionGate, ListRow, HeroCard, SkeletonCard, Dialogs } from '../components/Widgets';
 import { SunPathChart } from '../components/Charts';
 
 /**
@@ -416,12 +416,10 @@ export struct HomePage {
           })
         } else if (!this.ready) {
           Column({ space: Spacing.M }) {
-            LoadingProgress().width(40).height(40).color($r('app.color.lb_primary'))
-            Text('正在读取本地数据…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted'))
+            SkeletonCard()
+            SkeletonCard()
           }
           .width('100%')
-          .padding(Spacing.XXXL)
-          .alignItems(HorizontalAlign.Center)
         } else if (!this.hasPlace) {
           this.emptyBlock()
         } else {

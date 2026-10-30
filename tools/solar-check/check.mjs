@@ -65,11 +65,21 @@ function hourAngleForAltitude(latDeg, declDeg, altitudeDeg) {
   return Math.acos(cosH) * RAD;
 }
 
-function events(dayStartUtc, latDeg, lonDeg) {
-  const noonGuess = dayStartUtc + 43200000;
-  const { decl, eotMin } = declinationAndEot(julianCentury(noonGuess));
-  const noonMinutes = 720 - 4 * lonDeg - eotMin;
-  const solarNoon = dayStartUtc + noonMinutes * 60000;
+/**
+ * 与 SolarCalc.events 完全一致的锚定方式：
+ * 入参是「本地日 00:00 对应的 UTC 时刻」，先取包含当地正午的那一天 UTC 零点，
+ * 再把太阳正午夹回目标本地日区间——跨日期线（±180°）必须靠这一步才不会整体偏一天。
+ */
+function events(dayStartLocalUtc, latDeg, lonDeg) {
+  const localNoonGuess = dayStartLocalUtc + 43200000;
+  const utcMidnight = Math.floor(localNoonGuess / 86400000) * 86400000;
+  const { decl, eotMin } = declinationAndEot(julianCentury(utcMidnight + 43200000));
+  let solarNoon = utcMidnight + (720 - 4 * lonDeg - eotMin) * 60000;
+  if (solarNoon < dayStartLocalUtc) {
+    solarNoon += 86400000;
+  } else if (solarNoon >= dayStartLocalUtc + 86400000) {
+    solarNoon -= 86400000;
+  }
   const out = { solarNoon, decl, noonAltitude: 90 - Math.abs(latDeg - decl) };
   const pairs = [
     ['sunrise', 'sunset', -0.833],
@@ -117,7 +127,16 @@ const cases = [];
 for (const line of lines) {
   if (line.startsWith('CASE ')) {
     const parts = line.split(/\s+/);
-    current = { name: parts[1], lat: Number(parts[2]), lon: Number(parts[3]), date: parts[4], ref: null };
+    // 可选第 5 段：显式时区小时数。日期线附近「日期+经度」本身不唯一，
+    // 必须给定时区才能与参考源对齐（app 里等价于机位的 tzId）。
+    current = {
+      name: parts[1],
+      lat: Number(parts[2]),
+      lon: Number(parts[3]),
+      date: parts[4],
+      tz: parts.length > 5 ? Number(parts[5]) : undefined,
+      ref: null
+    };
     cases.push(current);
   } else if (line.startsWith('{') && current) {
     current.ref = JSON.parse(line).results;
@@ -143,7 +162,9 @@ const rows = [];
 
 for (const c of cases) {
   const [y, m, d] = c.date.split('-').map(Number);
-  const dayStart = Date.UTC(y, m - 1, d, 0, 0, 0);
+  // 参考源以「该坐标的本地日期」为准；显式给了时区就用它，否则按经度推算（15°/小时）
+  const tzOffsetHours = c.tz !== undefined ? c.tz : Math.round(c.lon / 15);
+  const dayStart = Date.UTC(y, m - 1, d, 0, 0, 0) - tzOffsetHours * 3600000;
   const mine = events(dayStart, c.lat, c.lon);
   let caseMax = 0;
   for (const [mineKey, refKey] of FIELDS) {

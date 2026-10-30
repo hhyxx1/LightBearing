@@ -5,7 +5,7 @@ import { Place, IdGen } from '../model/Models';
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, ListRow, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, ListRow, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
 /**
  * S04 机位库：收藏地点、输入坐标、标签、搜索与修改。
@@ -32,6 +32,9 @@ export struct LocationsPage {
   @State locating: boolean = false;
   @State hint: string = '';
   @State currentId: string = '';
+  /** 刚删除的机位，用于页面内撤销（不叠加第二个对话框） */
+  @State undoPlace: Place | undefined = undefined;
+  @State undoLabel: string = '';
 
   aboutToAppear(): void {
     this.loadAll();
@@ -68,6 +71,7 @@ export struct LocationsPage {
 
   private openForm(place: Place | undefined): void {
     this.formOpen = true;
+    AppState.markDirty('机位编辑');
     if (place === undefined) {
       this.editingId = '';
       this.nameInput = '';
@@ -125,6 +129,7 @@ export struct LocationsPage {
       }
       await AppState.savePlace(place);
       this.formOpen = false;
+      AppState.clearDirty();
       this.hint = '已保存。';
       await this.loadAll();
       Dialogs.toast(this.getUIContext(), '机位已保存到本地');
@@ -169,11 +174,72 @@ export struct LocationsPage {
       '删除', () => {
         AppState.deletePlace(place.id).then(() => {
           this.loadAll();
-          Dialogs.toast(this.getUIContext(), '已删除');
+          // 危险动作可撤销：在页面内给出撤销条，避免连续弹两个系统对话框
+          this.undoPlace = place;
+          this.undoLabel = `已删除「${place.name}」`;
         }).catch((err: Error) => {
           this.hint = `删除失败：${err.message}`;
         });
       });
+  }
+
+  private async undoDelete(): Promise<void> {
+    const target = this.undoPlace;
+    if (target === undefined) {
+      return;
+    }
+    try {
+      await AppState.savePlace(target);
+      this.undoPlace = undefined;
+      this.undoLabel = '';
+      await this.loadAll();
+      Dialogs.toast(this.getUIContext(), '已恢复机位');
+    } catch (err) {
+      this.hint = `恢复失败：${(err as Error).message}`;
+    }
+  }
+
+  @Builder
+  undoBar() {
+    Row({ space: Spacing.M }) {
+      Image($r('app.media.ic_history_muted'))
+        .width(18)
+        .height(18)
+        .objectFit(ImageFit.Contain)
+      Text(this.undoLabel)
+        .fontSize(FontSize.SMALL)
+        .fontColor($r('app.color.lb_ink'))
+        .layoutWeight(1)
+      Button('撤销')
+        .type(ButtonType.Normal)
+        .height(36)
+        .fontSize(FontSize.SMALL)
+        .fontWeight(FontWeight.Bold)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor($r('app.color.lb_primary'))
+        .fontColor($r('app.color.lb_on_primary'))
+        .onClick(() => {
+          this.undoDelete();
+        })
+      Button('关闭')
+        .type(ButtonType.Normal)
+        .height(36)
+        .fontSize(FontSize.SMALL)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor(Color.Transparent)
+        .fontColor($r('app.color.lb_muted'))
+        .onClick(() => {
+          this.undoPlace = undefined;
+          this.undoLabel = '';
+        })
+    }
+    .width('100%')
+    .padding(Spacing.M)
+    .backgroundColor($r('app.color.lb_panel2'))
+    .borderRadius(Radius.BUTTON)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -273,6 +339,7 @@ export struct LocationsPage {
           .onClick(() => {
             this.formOpen = false;
             this.hint = '';
+            AppState.clearDirty();
           })
       }
       .width('100%')
@@ -302,7 +369,11 @@ export struct LocationsPage {
             }
           })
         } else if (!this.ready) {
-          Text('读取中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else {
           Row({ space: Spacing.S }) {
             TextInput({ text: this.keyword, placeholder: '搜索名称/标签/备注' })
@@ -344,6 +415,10 @@ export struct LocationsPage {
 
           if (this.formOpen) {
             this.formSection()
+          }
+
+          if (this.undoPlace !== undefined) {
+            this.undoBar()
           }
 
           if (this.places.length === 0) {

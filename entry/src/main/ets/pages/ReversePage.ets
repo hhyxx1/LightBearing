@@ -6,7 +6,7 @@ import { SolarCalc } from '../services/SolarCalc';
 import { ReverseSearch } from '../services/ReverseSearch';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
 /**
  * S03 反向寻光：给定方位/高度容差与日期范围，批量搜索满足条件的时刻。
@@ -158,7 +158,11 @@ export struct ReversePage {
             }
           })
         } else if (!this.ready) {
-          Text('读取中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else if (!this.hasPlace) {
           EmptyState({
             title: '还没有机位',

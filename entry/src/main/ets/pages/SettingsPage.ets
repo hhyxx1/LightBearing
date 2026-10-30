@@ -6,7 +6,7 @@ import { TimeUtil } from '../services/TimeUtil';
 import { LocationService } from '../services/LocationService';
 import { SensorService } from '../services/SensorService';
 import { AppDb } from '../repository/AppDb';
-import { TopBar, ErrorCard, NoticeBar, NumberField, SwitchRow, StatusBadge, Dialogs } from '../components/Widgets';
+import { TopBar, ErrorCard, NoticeBar, NumberField, SwitchRow, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
 /**
  * S10 设置：坐标系、时区、定位授权、角度单位、隐私与说明。
@@ -189,7 +189,11 @@ export struct SettingsPage {
             }
           })
         } else if (!this.ready) {
-          Text('读取中…').fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted')).padding(Spacing.XXL)
+          Column({ space: Spacing.M }) {
+            SkeletonCard()
+            SkeletonCard()
+          }
+          .width('100%')
         } else {
           this.themeSection()
 
