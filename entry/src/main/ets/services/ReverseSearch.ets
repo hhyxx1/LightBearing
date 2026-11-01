@@ -1,5 +1,6 @@
 import { SolarCalc, SunPosition, LightThresholds } from './SolarCalc';
 import { Candidate, SearchGoal } from '../model/Models';
+import { DayKind, LocalDayBounds } from './LocalTimeResolver';
 
 /** 粗扫粒度（毫秒）：5 分钟 */
 const COARSE_STEP_MS = 5 * 60 * 1000;
@@ -27,6 +28,48 @@ export class DayRange {
     r.startUtc = startUtc;
     r.endUtc = endUtc;
     return r;
+  }
+}
+
+/**
+ * 一次搜索的区间规划结果。
+ * 真正被整日跳过的日期可以安全跳过并计数；
+ * 时区数据不可用或日期非法时必须报错，不能伪装成「搜索完成」。
+ */
+export class SearchPlan {
+  ranges: DayRange[] = [];
+  requestedDays: number = 0;
+  /** 历史时区规则中该民用日确实不存在 */
+  skippedDays: number = 0;
+  /** 时区数据不可用（探针故障） */
+  unavailableDays: number = 0;
+  /** 日期/区间非法 */
+  invalidDays: number = 0;
+  /** 非空表示必须中止搜索 */
+  errorText: string = '';
+
+  static plan(days: LocalDayBounds[]): SearchPlan {
+    const plan = new SearchPlan();
+    plan.requestedDays = days.length;
+    for (const b of days) {
+      if (b.valid && b.endUtc > b.startUtc) {
+        plan.ranges.push(DayRange.of(b.startUtc, b.endUtc));
+      } else if (b.kind === DayKind.SKIPPED) {
+        plan.skippedDays++;
+      } else if (b.kind === DayKind.UNAVAILABLE) {
+        plan.unavailableDays++;
+      } else {
+        plan.invalidDays++;
+      }
+    }
+    if (plan.unavailableDays > 0) {
+      plan.errorText = `有 ${plan.unavailableDays} 天的时区数据不可用，已中止搜索以避免不完整结果`;
+    } else if (plan.invalidDays > 0) {
+      plan.errorText = `有 ${plan.invalidDays} 天的日期边界非法，已中止搜索`;
+    } else if (plan.ranges.length === 0) {
+      plan.errorText = '所选日期范围内没有可搜索的本地日（全部被时区跳变跳过）';
+    }
+    return plan;
   }
 }
 

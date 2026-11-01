@@ -1,7 +1,18 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { DayRange, ReverseSearch } from '../main/ets/services/ReverseSearch';
+import { DayRange, ReverseSearch, SearchPlan } from '../main/ets/services/ReverseSearch';
 import { SolarCalc, LightThresholds, SunPosition } from '../main/ets/services/SolarCalc';
 import { SearchGoal, Candidate } from '../main/ets/model/Models';
+import { DayKind, LocalDayBounds } from '../main/ets/services/LocalTimeResolver';
+
+/** 构造一个指定状态的日界对象 */
+function boundsOf(kind: number, valid: boolean): LocalDayBounds {
+  const b = new LocalDayBounds();
+  b.kind = kind;
+  b.valid = valid;
+  b.startUtc = valid ? 1735689600000 : -1;
+  b.endUtc = valid ? 1735776000000 : -1;
+  return b;
+}
 
 /** 用某已知时刻的太阳位置构造目标 */
 function goalAt(lat: number, lon: number, instantUtc: number, tolerance: number): SearchGoal {
@@ -179,6 +190,57 @@ export default function reverseSearchTest() {
       for (const c of found) {
         expect(c.utcMs >= start).assertTrue();
         expect(c.utcMs < end).assertTrue();
+      }
+    });
+
+    it('search_plan_distinguishes_skipped_and_unavailable', 0, () => {
+      // 全部有效
+      const allValid = SearchPlan.plan([boundsOf(DayKind.NORMAL, true), boundsOf(DayKind.NORMAL, true)]);
+      expect(allValid.ranges.length).assertEqual(2);
+      expect(allValid.requestedDays).assertEqual(2);
+      expect(allValid.skippedDays).assertEqual(0);
+      expect(allValid.errorText.length).assertEqual(0);
+
+      // 中间夹真正被跳过的日期：可跳过并计数，不算错误
+      const withSkipped = SearchPlan.plan([boundsOf(DayKind.NORMAL, true), boundsOf(DayKind.SKIPPED, false),
+        boundsOf(DayKind.NORMAL, true)]);
+      expect(withSkipped.ranges.length).assertEqual(2);
+      expect(withSkipped.skippedDays).assertEqual(1);
+      expect(withSkipped.errorText.length).assertEqual(0);
+
+      // 时区数据不可用：必须报错，不能静默跳过
+      const withUnavailable = SearchPlan.plan([boundsOf(DayKind.NORMAL, true), boundsOf(DayKind.UNAVAILABLE, false)]);
+      expect(withUnavailable.unavailableDays).assertEqual(1);
+      expect(withUnavailable.errorText.length > 0).assertTrue();
+
+      // 日期非法：同样报错
+      const withInvalid = SearchPlan.plan([boundsOf(DayKind.INVALID, false)]);
+      expect(withInvalid.invalidDays).assertEqual(1);
+      expect(withInvalid.errorText.length > 0).assertTrue();
+
+      // 全部被跳过：没有可搜索日，报错而不是「成功 0 条」
+      const allSkipped = SearchPlan.plan([boundsOf(DayKind.SKIPPED, false), boundsOf(DayKind.SKIPPED, false)]);
+      expect(allSkipped.ranges.length).assertEqual(0);
+      expect(allSkipped.skippedDays).assertEqual(2);
+      expect(allSkipped.errorText.length > 0).assertTrue();
+
+      // 空输入同样报错
+      const empty = SearchPlan.plan([]);
+      expect(empty.requestedDays).assertEqual(0);
+      expect(empty.errorText.length > 0).assertTrue();
+    });
+
+    it('range_search_skips_only_really_skipped_days', 0, () => {
+      // 规划出的区间数量决定进度分母：跳过日不占进度
+      const plan = SearchPlan.plan([boundsOf(DayKind.NORMAL, true), boundsOf(DayKind.SKIPPED, false),
+        boundsOf(DayKind.NORMAL, true), boundsOf(DayKind.SKIPPED, false)]);
+      expect(plan.requestedDays).assertEqual(4);
+      expect(plan.ranges.length).assertEqual(2);
+      const goal = goalAt(31.2304, 121.4737, plan.ranges[0].startUtc + 6 * 3600000.0, 2.0);
+      const found: Candidate[] = ReverseSearch.searchInRanges(goal, LightThresholds.defaults(), plan.ranges);
+      for (const c of found) {
+        const inAny = plan.ranges.some((r: DayRange) => c.utcMs >= r.startUtc && c.utcMs < r.endUtc);
+        expect(inAny).assertTrue();
       }
     });
 

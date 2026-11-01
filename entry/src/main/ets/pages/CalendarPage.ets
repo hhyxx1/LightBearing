@@ -4,7 +4,7 @@ import { image } from '@kit.ImageKit';
 import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH, ThemeColors } from '../common/Theme';
 import { Place, ShootPlan } from '../model/Models';
-import { SolarCalc, SolarEvents, LightWindow } from '../services/SolarCalc';
+import { SolarCalc, SolarEvents, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { DayKind } from '../services/LocalTimeResolver';
 import { ExportService, ExportResult } from '../services/ExportService';
@@ -92,8 +92,8 @@ export struct CalendarPage {
       return;
     }
     const cells: DayCell[] = [];
-    const firstUtc = TimeUtil.fromLocal(place.tzId, this.year, this.month, 1, 0, 0);
-    const firstWeekday = TimeUtil.weekday(place.tzId, firstUtc);
+    // 公历日期自带星期，与被跳过的本地日、时区数据无关，直接用日历计算
+    const firstWeekday = new Date(Date.UTC(this.year, this.month - 1, 1)).getUTCDay();
     const daysInMonth = new Date(this.year, this.month, 0).getDate();
     // 前置空位（周一为首列：周日→6）
     const leading = (firstWeekday + 6) % 7;
@@ -120,14 +120,19 @@ export struct CalendarPage {
       if (bounds.valid) {
         cell.polarState = ev.polarState;
       }
-      cell.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
-      cell.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
-      cell.solarNoonText = TimeUtil.formatTime(place.tzId, ev.solarNoonUtc);
-      cell.goldenAm = w.goldenMorningStartUtc < 0 ? '无'
-        : `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`;
-      cell.goldenPm = w.goldenEveningStartUtc < 0 ? '无'
-        : `${TimeUtil.formatTime(place.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenEveningEndUtc)}`;
-      cell.hasGolden = w.goldenMorningStartUtc >= 0 || w.goldenEveningStartUtc >= 0;
+      cell.sunriseText = ev.sunriseState === EventState.AVAILABLE
+        ? TimeUtil.formatTime(place.tzId, ev.sunriseUtc) : '无';
+      cell.sunsetText = ev.sunsetState === EventState.AVAILABLE
+        ? TimeUtil.formatTime(place.tzId, ev.sunsetUtc) : '无';
+      cell.solarNoonText = ev.noonState === EventState.AVAILABLE
+        ? TimeUtil.formatTime(place.tzId, ev.solarNoonUtc) : '--:--';
+      cell.goldenAm = w.goldenMorningState === WindowState.AVAILABLE
+        ? `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`
+        : '无';
+      cell.goldenPm = w.goldenEveningState === WindowState.AVAILABLE
+        ? `${TimeUtil.formatTime(place.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenEveningEndUtc)}`
+        : '无';
+      cell.hasGolden = w.goldenMorningState === WindowState.AVAILABLE || w.goldenEveningState === WindowState.AVAILABLE;
       let count = 0;
       for (const plan of AppState.plans) {
         const planLocal = TimeUtil.toLocal(place.tzId, plan.selectedUtc);

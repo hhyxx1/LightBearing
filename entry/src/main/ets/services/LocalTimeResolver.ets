@@ -89,6 +89,8 @@ export class DayKind {
   /** 整日被时区跳变跳过（如 2011-12-30 Pacific/Apia） */
   static readonly SKIPPED: number = 3;
   static readonly INVALID: number = 4;
+  /** 时区数据不可用（探针故障），与「日期非法」区分 */
+  static readonly UNAVAILABLE: number = 5;
 }
 
 /** 真实本地日边界 [startUtc, endUtc) */
@@ -275,7 +277,7 @@ export class LocalTimeResolver {
     const startResult: DayStartResult = LocalTimeResolver.firstExistingInstantOf(probe, year, month, day);
     if (startResult.status === DayStartStatus.UNAVAILABLE) {
       b.valid = false;
-      b.kind = DayKind.INVALID;
+      b.kind = DayKind.UNAVAILABLE;
       b.reason = '时区数据不可用，无法确定本地日边界';
       return b;
     }
@@ -300,7 +302,7 @@ export class LocalTimeResolver {
       const endResult: DayStartResult = LocalTimeResolver.firstExistingInstantOf(probe, ny, nm, nd);
       if (endResult.status === DayStartStatus.UNAVAILABLE) {
         b.valid = false;
-        b.kind = DayKind.INVALID;
+        b.kind = DayKind.UNAVAILABLE;
         b.reason = '时区数据不可用，无法确定本地日结束边界';
         return b;
       }

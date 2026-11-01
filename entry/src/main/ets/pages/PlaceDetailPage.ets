@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place } from '../model/Models';
-import { SolarCalc, SolarEvents } from '../services/SolarCalc';
+import { SolarCalc, SolarEvents, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, SectionCard, EmptyState, ErrorCard, NoticeBar, MetricTile,
@@ -56,11 +56,14 @@ export struct PlaceDetailPage {
         }
       }
       const ev: SolarEvents = SolarCalc.events(dayStart, found.latWgs84, found.lonWgs84, dayEnd);
-      this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(found.tzId, ev.sunriseUtc);
-      this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(found.tzId, ev.sunsetUtc);
+      this.sunriseText = ev.sunriseState === EventState.AVAILABLE
+        ? TimeUtil.formatTime(found.tzId, ev.sunriseUtc) : '无';
+      this.sunsetText = ev.sunsetState === EventState.AVAILABLE
+        ? TimeUtil.formatTime(found.tzId, ev.sunsetUtc) : '无';
       const w = SolarCalc.lightWindows(dayStart, found.latWgs84, found.lonWgs84, AppState.thresholds(), dayEnd);
-      this.goldenText = w.goldenEveningStartUtc < 0 ? '无'
-        : `${TimeUtil.formatTime(found.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(found.tzId, w.goldenEveningEndUtc)}`;
+      this.goldenText = w.goldenEveningState === WindowState.AVAILABLE
+        ? `${TimeUtil.formatTime(found.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(found.tzId, w.goldenEveningEndUtc)}`
+        : '无';
       this.ready = true;
     } catch (err) {
       this.errorText = `读取机位失败：${(err as Error).message}`;

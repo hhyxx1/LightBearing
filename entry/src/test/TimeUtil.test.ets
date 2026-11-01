@@ -410,8 +410,10 @@ export default function timeUtilTest() {
 
       const b = LocalTimeResolver.dayBounds(new NaNProbe(), 2026, 10, 30);
       expect(b.valid).assertFalse();
-      expect(b.kind).assertEqual(DayKind.INVALID);
+      // 2B-3A 起「数据不可用」与「日期非法」分开：这里必须是 UNAVAILABLE，且不是 SKIPPED
+      expect(b.kind).assertEqual(DayKind.UNAVAILABLE);
       expect(b.kind === DayKind.SKIPPED).assertFalse();
+      expect(b.kind === DayKind.INVALID).assertFalse();
     });
 
     it('candidate_verification_failure_is_unavailable', 0, () => {

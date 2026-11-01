@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH, ThemeColors } from '../common/Theme';
 import { Place, ShootPlan, Candidate } from '../model/Models';
-import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow } from '../services/SolarCalc';
+import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
@@ -111,6 +111,21 @@ export struct HomePage {
 
   private recompute(place: Place, selectedUtc: number): void {
     const th = AppState.thresholds();
+    // 时区数据异常时 selectedUtc 可能是 NaN：不允许把 NaN 传进 position()
+    if (!Number.isFinite(selectedUtc)) {
+      this.posAz = 0;
+      this.posAlt = 0;
+      this.phaseLabel = '时间不可用';
+      this.sunriseText = '无';
+      this.sunsetText = '无';
+      this.civilText = '无';
+      this.polarText = '机位时区或日期数据不可用，无法计算太阳位置。';
+      this.goldenAmText = '无';
+      this.goldenPmText = '无';
+      this.blueAmText = '无';
+      this.bluePmText = '无';
+      return;
+    }
     const pos: SunPosition = SolarCalc.position(selectedUtc, place.latWgs84, place.lonWgs84);
     this.posAz = pos.azimuthDeg;
     this.posAlt = pos.altitudeDeg;
@@ -119,10 +134,12 @@ export struct HomePage {
     this.phaseLabel = SolarCalc.phaseLabel(phase);
 
     const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84, this.dayEndUtc);
-    this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
-    this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
-    this.civilText = ev.civilDuskUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.civilDuskUtc);
-    if (ev.polarState === 1) {
+    this.sunriseText = ev.sunriseState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.sunriseUtc) : '无';
+    this.sunsetText = ev.sunsetState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.sunsetUtc) : '无';
+    this.civilText = ev.civilDuskState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.civilDuskUtc) : '无';
+    if (!ev.dayValid) {
+      this.polarText = '本地日边界不可用，无法判定当日太阳事件。';
+    } else if (ev.polarState === 1) {
       this.polarText = '当日极昼：太阳全天位于地平线以上，无常规日出日落。';
     } else if (ev.polarState === 2) {
       this.polarText = '当日极夜：太阳全天位于地平线以下，无常规日出日落。';
@@ -132,14 +149,18 @@ export struct HomePage {
 
     const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th,
       this.dayEndUtc);
-    this.goldenAmText = w.goldenMorningStartUtc < 0 ? '无'
-      : `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`;
-    this.goldenPmText = w.goldenEveningStartUtc < 0 ? '无'
-      : `${TimeUtil.formatTime(place.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenEveningEndUtc)}`;
-    this.blueAmText = w.blueMorningStartUtc < 0 ? '无'
-      : `${TimeUtil.formatTime(place.tzId, w.blueMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.blueMorningEndUtc)}`;
-    this.bluePmText = w.blueEveningStartUtc < 0 ? '无'
-      : `${TimeUtil.formatTime(place.tzId, w.blueEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.blueEveningEndUtc)}`;
+    this.goldenAmText = w.goldenMorningState === WindowState.AVAILABLE
+      ? `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`
+      : '无';
+    this.goldenPmText = w.goldenEveningState === WindowState.AVAILABLE
+      ? `${TimeUtil.formatTime(place.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenEveningEndUtc)}`
+      : '无';
+    this.blueAmText = w.blueMorningState === WindowState.AVAILABLE
+      ? `${TimeUtil.formatTime(place.tzId, w.blueMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.blueMorningEndUtc)}`
+      : '无';
+    this.bluePmText = w.blueEveningState === WindowState.AVAILABLE
+      ? `${TimeUtil.formatTime(place.tzId, w.blueEveningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.blueEveningEndUtc)}`
+      : '无';
   }
 
   private onSliderChange(minutes: number): void {

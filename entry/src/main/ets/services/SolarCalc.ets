@@ -35,7 +35,27 @@ export enum ThresholdState {
   ALWAYS_BELOW = 2
 }
 
-/** 某日太阳事件（全部为 UTC 毫秒；不可用时为 -1） */
+/** 单个太阳事件的可用状态：把「有没有事件」与「事件时间戳」彻底分开 */
+export enum EventState {
+  /** 该阈值有穿越，且事件时刻落在目标本地日 [start, end) 内 */
+  AVAILABLE = 0,
+  /** 太阳当日没有穿越该高度阈值（极昼/极夜等） */
+  NO_CROSSING = 1,
+  /** 有穿越，但事件时刻不在目标本地日内（属于相邻本地日期，不能当作今天的事件） */
+  OUTSIDE_DAY = 2,
+  /** 目标本地日区间非法 */
+  DAY_INVALID = 3
+}
+
+/** 光线窗口的可用状态 */
+export enum WindowState {
+  AVAILABLE = 0,
+  /** 该高度带当日不存在，或带完全落在目标本地日之外 */
+  ABSENT = 1,
+  DAY_INVALID = 2
+}
+
+/** 某日太阳事件（时间戳为 UTC 毫秒；是否可用请看各 *State 字段，不要用时间戳正负判断） */
 export class SolarEvents {
   solarNoonUtc: number = -1;
   sunriseUtc: number = -1;
@@ -55,6 +75,16 @@ export class SolarEvents {
   civilState: number = ThresholdState.CROSSING;
   nauticalState: number = ThresholdState.CROSSING;
   astronomicalState: number = ThresholdState.CROSSING;
+  /** 各事件是否可用（见 EventState）；即使时间戳为负（1970 年前）也能正确表达 */
+  noonState: number = EventState.NO_CROSSING;
+  sunriseState: number = EventState.NO_CROSSING;
+  sunsetState: number = EventState.NO_CROSSING;
+  civilDawnState: number = EventState.NO_CROSSING;
+  civilDuskState: number = EventState.NO_CROSSING;
+  nauticalDawnState: number = EventState.NO_CROSSING;
+  nauticalDuskState: number = EventState.NO_CROSSING;
+  astronomicalDawnState: number = EventState.NO_CROSSING;
+  astronomicalDuskState: number = EventState.NO_CROSSING;
   /** 传入的民用日区间是否合法（dayEnd <= dayStart 时为 false，此时所有时间为 -1） */
   dayValid: boolean = true;
 }
@@ -94,6 +124,11 @@ export class LightWindow {
   blueMorningEndUtc: number = -1;
   blueEveningStartUtc: number = -1;
   blueEveningEndUtc: number = -1;
+  /** 各窗口是否可用（见 WindowState）；不要用时间戳正负判断 */
+  goldenMorningState: number = WindowState.ABSENT;
+  goldenEveningState: number = WindowState.ABSENT;
+  blueMorningState: number = WindowState.ABSENT;
+  blueEveningState: number = WindowState.ABSENT;
   /** 传入的民用日区间是否合法（非法时所有窗口为 -1） */
   dayValid: boolean = true;
 }
@@ -248,6 +283,30 @@ export class SolarCalc {
   }
 
   /**
+   * 求某高度阈值的两个事件时刻，并判定是否属于目标本地日 [dayStart, dayEnd)。
+   * 返回 [dawnUtc, duskUtc, dawnState, duskState]；
+   * 不在区间内的时间戳一律回 -1，绝不把相邻本地日期的事件外泄给调用方。
+   */
+  static eventPair(noonUtc: number, dayStartUtc: number, dayEndUtc: number,
+    latDeg: number, declDeg: number, altitudeDeg: number): number[] {
+    const state = SolarCalc.thresholdState(latDeg, declDeg, altitudeDeg);
+    if (state !== ThresholdState.CROSSING) {
+      return [-1, -1, EventState.NO_CROSSING, EventState.NO_CROSSING];
+    }
+    const h = SolarCalc.hourAngleForAltitude(latDeg, declDeg, altitudeDeg);
+    const dawn = noonUtc - h * 240000.0;
+    const dusk = noonUtc + h * 240000.0;
+    const dawnOk = dawn >= dayStartUtc && dawn < dayEndUtc;
+    const duskOk = dusk >= dayStartUtc && dusk < dayEndUtc;
+    return [
+      dawnOk ? dawn : -1,
+      duskOk ? dusk : -1,
+      dawnOk ? EventState.AVAILABLE : EventState.OUTSIDE_DAY,
+      duskOk ? EventState.AVAILABLE : EventState.OUTSIDE_DAY
+    ];
+  }
+
+  /**
    * 计算某日事件。
    * @param dayStartLocalUtc 目标本地日 00:00 对应的 UTC 时刻
    * @param dayEndLocalUtc 目标本地日结束（次日 00:00 对应的 UTC 时刻）。
@@ -264,13 +323,25 @@ export class SolarCalc {
       dayEnd = dayEndLocalUtc;
     } else {
       e.dayValid = false;
+      e.noonState = EventState.DAY_INVALID;
+      e.sunriseState = EventState.DAY_INVALID;
+      e.sunsetState = EventState.DAY_INVALID;
+      e.civilDawnState = EventState.DAY_INVALID;
+      e.civilDuskState = EventState.DAY_INVALID;
+      e.nauticalDawnState = EventState.DAY_INVALID;
+      e.nauticalDuskState = EventState.DAY_INVALID;
+      e.astronomicalDawnState = EventState.DAY_INVALID;
+      e.astronomicalDuskState = EventState.DAY_INVALID;
       return e;
     }
     // 太阳正午由「区间内的物理正午」决定，民用日长度不参与太阳位置计算
-    const noon = SolarCalc.solarNoonNear(dayStartLocalUtc, dayEnd, lonDeg);
-    const decl = SolarCalc.declinationAndEot(SolarCalc.julianCentury(noon))[0];
-    e.solarNoonUtc = noon;
+    const noonValue = SolarCalc.solarNoonNear(dayStartLocalUtc, dayEnd, lonDeg);
+    const decl = SolarCalc.declinationAndEot(SolarCalc.julianCentury(noonValue))[0];
     e.noonAltitudeDeg = 90.0 - Math.abs(latDeg - decl);
+    // 日期归属一律使用半开区间 [dayStart, dayEnd)：起点包含、终点不包含
+    const noonInside = noonValue >= dayStartLocalUtc && noonValue < dayEnd;
+    e.solarNoonUtc = noonInside ? noonValue : -1;
+    e.noonState = noonInside ? EventState.AVAILABLE : EventState.OUTSIDE_DAY;
 
     // 四个阈值各自独立判定：某一阈值无穿越不得导致其它阈值被跳过。
     e.sunState = SolarCalc.thresholdState(latDeg, decl, -0.833);
@@ -278,28 +349,32 @@ export class SolarCalc {
     e.nauticalState = SolarCalc.thresholdState(latDeg, decl, -12.0);
     e.astronomicalState = SolarCalc.thresholdState(latDeg, decl, -18.0);
 
-    if (e.sunState === ThresholdState.CROSSING) {
-      const sunriseH = SolarCalc.hourAngleForAltitude(latDeg, decl, -0.833);
-      e.sunriseUtc = e.solarNoonUtc - sunriseH * 240000.0;
-      e.sunsetUtc = e.solarNoonUtc + sunriseH * 240000.0;
-    } else {
+    const sun: number[] = SolarCalc.eventPair(noonValue, dayStartLocalUtc, dayEnd, latDeg, decl, -0.833);
+    e.sunriseUtc = sun[0];
+    e.sunsetUtc = sun[1];
+    e.sunriseState = sun[2];
+    e.sunsetState = sun[3];
+    if (e.sunState !== ThresholdState.CROSSING) {
       e.polarState = e.sunState === ThresholdState.ALWAYS_ABOVE ? 1 : 2;
     }
-    if (e.civilState === ThresholdState.CROSSING) {
-      const civilH = SolarCalc.hourAngleForAltitude(latDeg, decl, -6.0);
-      e.civilDawnUtc = e.solarNoonUtc - civilH * 240000.0;
-      e.civilDuskUtc = e.solarNoonUtc + civilH * 240000.0;
-    }
-    if (e.nauticalState === ThresholdState.CROSSING) {
-      const nauticalH = SolarCalc.hourAngleForAltitude(latDeg, decl, -12.0);
-      e.nauticalDawnUtc = e.solarNoonUtc - nauticalH * 240000.0;
-      e.nauticalDuskUtc = e.solarNoonUtc + nauticalH * 240000.0;
-    }
-    if (e.astronomicalState === ThresholdState.CROSSING) {
-      const astroH = SolarCalc.hourAngleForAltitude(latDeg, decl, -18.0);
-      e.astronomicalDawnUtc = e.solarNoonUtc - astroH * 240000.0;
-      e.astronomicalDuskUtc = e.solarNoonUtc + astroH * 240000.0;
-    }
+
+    const civil: number[] = SolarCalc.eventPair(noonValue, dayStartLocalUtc, dayEnd, latDeg, decl, -6.0);
+    e.civilDawnUtc = civil[0];
+    e.civilDuskUtc = civil[1];
+    e.civilDawnState = civil[2];
+    e.civilDuskState = civil[3];
+
+    const nautical: number[] = SolarCalc.eventPair(noonValue, dayStartLocalUtc, dayEnd, latDeg, decl, -12.0);
+    e.nauticalDawnUtc = nautical[0];
+    e.nauticalDuskUtc = nautical[1];
+    e.nauticalDawnState = nautical[2];
+    e.nauticalDuskState = nautical[3];
+
+    const astro: number[] = SolarCalc.eventPair(noonValue, dayStartLocalUtc, dayEnd, latDeg, decl, -18.0);
+    e.astronomicalDawnUtc = astro[0];
+    e.astronomicalDuskUtc = astro[1];
+    e.astronomicalDawnState = astro[2];
+    e.astronomicalDuskState = astro[3];
     return e;
   }
 
@@ -386,6 +461,10 @@ export class SolarCalc {
       dayEnd = dayEndLocalUtc;
     } else {
       w.dayValid = false;
+      w.goldenMorningState = WindowState.DAY_INVALID;
+      w.goldenEveningState = WindowState.DAY_INVALID;
+      w.blueMorningState = WindowState.DAY_INVALID;
+      w.blueEveningState = WindowState.DAY_INVALID;
       return w;
     }
     // 与 events() 一致：正午由区间内的物理正午决定，民用日长度不参与平移
@@ -399,6 +478,8 @@ export class SolarCalc {
     w.goldenMorningEndUtc = golden[1];
     w.goldenEveningStartUtc = golden[2];
     w.goldenEveningEndUtc = golden[3];
+    w.goldenMorningState = golden[4] === 1.0 ? WindowState.AVAILABLE : WindowState.ABSENT;
+    w.goldenEveningState = golden[5] === 1.0 ? WindowState.AVAILABLE : WindowState.ABSENT;
 
     const blue: number[] = SolarCalc.bandWindows(noonUtc, dayStartLocalUtc, dayEnd, latDeg, decl,
       th.blueLowerDeg, th.goldenLowerDeg);
@@ -406,6 +487,8 @@ export class SolarCalc {
     w.blueMorningEndUtc = blue[1];
     w.blueEveningStartUtc = blue[2];
     w.blueEveningEndUtc = blue[3];
+    w.blueMorningState = blue[4] === 1.0 ? WindowState.AVAILABLE : WindowState.ABSENT;
+    w.blueEveningState = blue[5] === 1.0 ? WindowState.AVAILABLE : WindowState.ABSENT;
     return w;
   }
 
@@ -425,7 +508,7 @@ export class SolarCalc {
     const lowerState = SolarCalc.thresholdState(latDeg, declDeg, lowerDeg);
     const upperState = SolarCalc.thresholdState(latDeg, declDeg, upperDeg);
     if (lowerState === ThresholdState.ALWAYS_BELOW || upperState === ThresholdState.ALWAYS_ABOVE) {
-      return [-1.0, -1.0, -1.0, -1.0];
+      return [-1.0, -1.0, -1.0, -1.0, 0.0, 0.0];
     }
     const hLower = lowerState === ThresholdState.CROSSING
       ? SolarCalc.hourAngleForAltitude(latDeg, declDeg, lowerDeg) : -1.0;
@@ -439,14 +522,18 @@ export class SolarCalc {
     morningEnd = Math.min(dayEndUtc, morningEnd);
     eveningStart = Math.max(dayStartUtc, eveningStart);
     eveningEnd = Math.min(dayEndUtc, eveningEnd);
-    const out: number[] = [-1.0, -1.0, -1.0, -1.0];
+    // [晨起, 晨止, 夕起, 夕止, 晨有效(1/0), 夕有效(1/0)]
+    // 有效性用独立标志表示，时间戳本身可以是负数（1970 年前）
+    const out: number[] = [-1.0, -1.0, -1.0, -1.0, 0.0, 0.0];
     if (morningStart < morningEnd) {
       out[0] = morningStart;
       out[1] = morningEnd;
+      out[4] = 1.0;
     }
     if (eveningStart < eveningEnd) {
       out[2] = eveningStart;
       out[3] = eveningEnd;
+      out[5] = 1.0;
     }
     return out;
   }

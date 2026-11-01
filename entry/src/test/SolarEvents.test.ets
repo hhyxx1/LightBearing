@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { SolarCalc, SolarEvents, LightWindow, LightThresholds } from '../main/ets/services/SolarCalc';
+import { SolarCalc, SolarEvents, LightWindow, LightThresholds, EventState, WindowState } from '../main/ets/services/SolarCalc';
 
 /**
  * 太阳事件与光线窗口的边界行为测试（2A）。
@@ -96,11 +96,15 @@ export default function solarEventsTest() {
     it('southern_high_latitude_polar_night_with_twilight', 0, () => {
       // 南纬 70° 的 6 月 21 日（南半球冬至）：正午高度 ≈ 90 - (70 + 23.44) ≈ -3.44°，
       // 低于地平但高于 -6°，因此无日出、但民用曙暮光存在。
-      const dayStart: number = Date.UTC(2026, 5, 21, 12, 0, 0); // 该坐标无夏令时，取 UTC 正午前后作本地零点
-      const ev = SolarCalc.events(dayStart, -70.0, 0.0);
+      // 2B-3A 起事件必须归属到真实本地日 [21T00:00Z, 22T00:00Z) 内，故这里用完整本地日区间。
+      const dayStart: number = Date.UTC(2026, 5, 21, 0, 0, 0);
+      const ev = SolarCalc.events(dayStart, -70.0, 0.0, dayStart + 86400000);
       expect(ev.sunriseUtc).assertEqual(-1);
-      expect(ev.civilDawnUtc >= 0).assertTrue();
+      expect(ev.sunriseState).assertEqual(EventState.NO_CROSSING);
+      expect(ev.civilDawnState).assertEqual(EventState.AVAILABLE);
+      expect(ev.civilDuskState).assertEqual(EventState.AVAILABLE);
       expect(ev.civilDuskUtc > ev.civilDawnUtc).assertTrue();
+      expect(ev.civilDawnUtc >= dayStart && ev.civilDuskUtc < dayStart + 86400000).assertTrue();
     });
 
     it('golden_window_absent_when_sun_always_above_upper_threshold', 0, () => {
@@ -163,23 +167,19 @@ export default function solarEventsTest() {
     });
 
     it('solar_noon_not_shifted_by_23h_civil_day', 0, () => {
-      // 23 小时的民用日不能通过「减 23 小时」来纠正太阳正午。
-      // 该区间的中点落在 03-09，正午（≈17:06Z）正好在区间结束之后 6 分钟：
-      // 旧实现会把 03-09 的正午减 23 小时 → 03-08T18:06（比物理正午晚 1 小时）；
-      // 正确实现保留物理正午 03-09T17:06（只差 6 分钟到区间边界）。
+      // 23 小时民用日不能通过「减 23 小时」纠正太阳正午。
+      // 该区间包含物理正午 03-09T17:06Z；旧实现会得到 03-09T18:06Z（偏 1 小时）。
       const lat = 40.7128;
       const lon = -74.006;
-      const dayStart = Date.UTC(2026, 2, 8, 18, 0, 0);
-      const dayEnd = dayStart + 23 * HOUR; // 2026-03-09T17:00Z
+      const dayStart = Date.UTC(2026, 2, 9, 12, 0, 0);
+      const dayEnd = dayStart + 23 * HOUR; // 2026-03-10T11:00Z
       const ev = SolarCalc.events(dayStart, lat, lon, dayEnd);
-      // 正午只能贴近区间，不能被平移成另一个日内时刻
-      expect(Math.abs(ev.solarNoonUtc - dayEnd) <= 15 * MINUTE).assertTrue();
-      // 相邻太阳日的正午「日内时刻」几乎相同（EoT 日变化 < 1 分钟）；
-      // 若按日长平移，这里会相差整 1 小时。
+      expect(ev.noonState).assertEqual(EventState.AVAILABLE);
+      expect(ev.solarNoonUtc >= dayStart && ev.solarNoonUtc < dayEnd).assertTrue();
+      // 与同日 24 小时区间的正午完全一致（EoT 日变化 < 2 分钟）
       const reference = SolarCalc.events(Date.UTC(2026, 2, 9, 0, 0, 0), lat, lon,
         Date.UTC(2026, 2, 10, 0, 0, 0)).solarNoonUtc;
-      const sameTimeOfDay = Math.abs((ev.solarNoonUtc % 86400000) - (reference % 86400000));
-      expect(sameTimeOfDay < 2 * MINUTE).assertTrue();
+      expect(Math.abs(ev.solarNoonUtc - reference) < 2 * MINUTE).assertTrue();
     });
 
     it('solar_noon_not_shifted_by_25h_civil_day', 0, () => {
@@ -261,6 +261,109 @@ export default function solarEventsTest() {
       expect(ev.sunriseUtc < 0).assertTrue();
       expect(ev.sunriseUtc !== -1).assertTrue();
       expect(ev.sunsetUtc > ev.sunriseUtc).assertTrue();
+    });
+
+    it('event_states_pre_epoch_are_available', 0, () => {
+      // 1969-12-31 上海本地日：事件时间戳为负，但状态必须是 AVAILABLE（不是「无事件」）
+      const dayStart = Date.UTC(1969, 11, 30, 16, 0, 0);
+      const dayEnd = Date.UTC(1969, 11, 31, 16, 0, 0);
+      const ev = SolarCalc.events(dayStart, 31.2304, 121.4737, dayEnd);
+      expect(ev.dayValid).assertTrue();
+      expect(ev.sunriseState).assertEqual(EventState.AVAILABLE);
+      expect(ev.sunsetState).assertEqual(EventState.AVAILABLE);
+      expect(ev.sunriseUtc < 0).assertTrue();
+      expect(ev.sunriseUtc >= dayStart && ev.sunriseUtc < dayEnd).assertTrue();
+      expect(ev.sunsetUtc >= dayStart && ev.sunsetUtc < dayEnd).assertTrue();
+      expect(ev.sunsetUtc > ev.sunriseUtc).assertTrue();
+    });
+
+    it('event_states_polar_day_and_night', 0, () => {
+      const summer = SolarCalc.events(TROMSO_SUMMER_DAY_START, TROMSO_LAT, TROMSO_LON,
+        TROMSO_SUMMER_DAY_START + 86400000);
+      expect(summer.polarState).assertEqual(1);
+      expect(summer.sunriseState).assertEqual(EventState.NO_CROSSING);
+      expect(summer.civilDawnState).assertEqual(EventState.NO_CROSSING);
+
+      const winter = SolarCalc.events(TROMSO_WINTER_DAY_START, TROMSO_LAT, TROMSO_LON,
+        TROMSO_WINTER_DAY_START + 86400000);
+      expect(winter.polarState).assertEqual(2);
+      expect(winter.sunriseState).assertEqual(EventState.NO_CROSSING);
+      // 极夜仍有民用曙暮光：状态必须是 AVAILABLE
+      expect(winter.civilDawnState).assertEqual(EventState.AVAILABLE);
+    });
+
+    it('event_states_invalid_day_is_not_polar_night', 0, () => {
+      const dayStart = Date.UTC(2026, 2, 8, 5, 0, 0);
+      const ev = SolarCalc.events(dayStart, 40.7128, -74.006, dayStart);
+      expect(ev.dayValid).assertFalse();
+      expect(ev.noonState).assertEqual(EventState.DAY_INVALID);
+      expect(ev.sunriseState).assertEqual(EventState.DAY_INVALID);
+      expect(ev.astronomicalDuskState).assertEqual(EventState.DAY_INVALID);
+      // 非法日期不能被误判成极夜
+      expect(ev.polarState).assertEqual(0);
+    });
+
+    it('event_states_attribute_each_event_by_boundary', 0, () => {
+      // 23 小时人造区间 [03-08T18:00Z, +23h)：太阳正午在区间外 6 分钟
+      const lat = 40.7128;
+      const lon = -74.006;
+      const dayStart = Date.UTC(2026, 2, 8, 18, 0, 0);
+      const dayEnd = dayStart + 23 * HOUR;
+      const ev = SolarCalc.events(dayStart, lat, lon, dayEnd);
+      expect(ev.noonState).assertEqual(EventState.OUTSIDE_DAY);
+      expect(ev.solarNoonUtc).assertEqual(-1);
+      // 任何 AVAILABLE 的事件必须落在区间内；非 AVAILABLE 的时间戳一律不外泄
+      const times: number[] = [ev.sunriseUtc, ev.sunsetUtc, ev.civilDawnUtc, ev.civilDuskUtc];
+      const states: number[] = [ev.sunriseState, ev.sunsetState, ev.civilDawnState, ev.civilDuskState];
+      for (let i = 0; i < times.length; i++) {
+        if (states[i] === EventState.AVAILABLE) {
+          expect(times[i] >= dayStart && times[i] < dayEnd).assertTrue();
+        } else {
+          expect(times[i]).assertEqual(-1);
+        }
+      }
+    });
+
+    it('event_boundary_is_half_open', 0, () => {
+      const lat = 31.2304;
+      const lon = 121.4737;
+      const base = Date.UTC(2026, 9, 29, 16, 0, 0);
+      const ref = SolarCalc.events(base, lat, lon, base + 86400000);
+      const sunrise = ref.sunriseUtc;
+      const sunset = ref.sunsetUtc;
+      const noon = ref.solarNoonUtc;
+
+      // 起点包含：区间正好从日出开始
+      const startCase = SolarCalc.events(sunrise, lat, lon, noon + 5 * HOUR);
+      expect(startCase.sunriseState).assertEqual(EventState.AVAILABLE);
+      expect(startCase.sunriseUtc).assertEqual(sunrise);
+      // 日落已越过终点 → OUTSIDE_DAY，且时间戳回收为 -1
+      expect(startCase.sunsetState).assertEqual(EventState.OUTSIDE_DAY);
+      expect(startCase.sunsetUtc).assertEqual(-1);
+
+      // 终点不包含：区间正好在日落结束
+      const endCase = SolarCalc.events(noon - 5 * HOUR, lat, lon, sunset);
+      expect(endCase.noonState).assertEqual(EventState.AVAILABLE);
+      expect(endCase.sunsetState).assertEqual(EventState.OUTSIDE_DAY);
+      expect(endCase.sunsetUtc).assertEqual(-1);
+      expect(endCase.sunriseState).assertEqual(EventState.OUTSIDE_DAY);
+    });
+
+    it('window_states_reflect_availability', 0, () => {
+      const polarDay = SolarCalc.lightWindows(Date.UTC(2026, 5, 20, 22, 0, 0), 75.0, TROMSO_LON,
+        LightThresholds.defaults(), Date.UTC(2026, 5, 21, 22, 0, 0));
+      expect(polarDay.goldenMorningState).assertEqual(WindowState.ABSENT);
+      expect(polarDay.blueEveningState).assertEqual(WindowState.ABSENT);
+
+      const winter = SolarCalc.lightWindows(TROMSO_WINTER_DAY_START, TROMSO_LAT, TROMSO_LON,
+        LightThresholds.defaults(), TROMSO_WINTER_DAY_START + 86400000);
+      expect(winter.goldenMorningState).assertEqual(WindowState.AVAILABLE);
+      expect(winter.blueMorningState).assertEqual(WindowState.AVAILABLE);
+
+      const invalid = SolarCalc.lightWindows(0, TROMSO_LAT, TROMSO_LON, LightThresholds.defaults(), 0);
+      expect(invalid.dayValid).assertFalse();
+      expect(invalid.goldenMorningState).assertEqual(WindowState.DAY_INVALID);
+      expect(invalid.blueEveningState).assertEqual(WindowState.DAY_INVALID);
     });
 
     it('shanghai_normal_day_windows_ordered_and_bounded', 0, () => {

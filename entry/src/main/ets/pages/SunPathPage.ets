@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, IdGen } from '../model/Models';
-import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow } from '../services/SolarCalc';
+import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, MetricTile, SectionCard, Dialogs } from '../components/Widgets';
@@ -80,20 +80,46 @@ export struct SunPathPage {
     }
     const local = TimeUtil.toLocal(place.tzId, this.dayStartUtc);
     this.selectedUtc = TimeUtil.fromLocal(place.tzId, local.year, local.month, local.day, hour, minute);
+    // 时区数据异常时会得到 NaN：不允许把 NaN 传进 position()
+    if (!Number.isFinite(this.selectedUtc)) {
+      this.azText = '--';
+      this.altText = '--';
+      this.phaseLabel = '时间不可用';
+      return;
+    }
     const pos: SunPosition = SolarCalc.position(this.selectedUtc, place.latWgs84, place.lonWgs84);
     this.azText = `${pos.azimuthDeg.toFixed(1)}°`;
     this.altText = `${pos.altitudeDeg.toFixed(1)}°`;
     this.phaseLabel = SolarCalc.phaseLabel(SolarCalc.phaseOf(pos.altitudeDeg, AppState.thresholds()));
 
     const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84, this.dayEndUtc);
-    this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
-    this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
-    this.noonText = TimeUtil.formatTime(place.tzId, ev.solarNoonUtc);
-    this.noonAltText = `${ev.noonAltitudeDeg.toFixed(1)}°`;
-    if (ev.polarState === 1) {
+    const th = AppState.thresholds();
+    const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th,
+      this.dayEndUtc);
+    this.sunriseText = ev.sunriseState === EventState.AVAILABLE
+      ? TimeUtil.formatTime(place.tzId, ev.sunriseUtc) : '无';
+    this.sunsetText = ev.sunsetState === EventState.AVAILABLE
+      ? TimeUtil.formatTime(place.tzId, ev.sunsetUtc) : '无';
+    this.noonText = ev.noonState === EventState.AVAILABLE
+      ? TimeUtil.formatTime(place.tzId, ev.solarNoonUtc) : '--:--';
+    this.noonAltText = ev.dayValid ? `${ev.noonAltitudeDeg.toFixed(1)}°` : '--';
+    const hasGolden = w.goldenMorningState === WindowState.AVAILABLE || w.goldenEveningState === WindowState.AVAILABLE;
+    const hasBlue = w.blueMorningState === WindowState.AVAILABLE || w.blueEveningState === WindowState.AVAILABLE;
+    if (!ev.dayValid) {
+      this.polarText = '本地日边界不可用，无法判定当日太阳事件。';
+    } else if (ev.polarState === 1) {
       this.polarText = '当日极昼：太阳全天不落，黄金时刻以高度角阈值直接给出。';
     } else if (ev.polarState === 2) {
-      this.polarText = '当日极夜：太阳全天不升，无黄金/蓝调窗口。';
+      // 极夜不等于没有黄金/蓝调：太阳仍可能短暂进入 -4°／-6° 高度带
+      if (hasGolden && hasBlue) {
+        this.polarText = '当日极夜：太阳全天不升，但仍有黄金时刻与蓝调窗口。';
+      } else if (hasGolden) {
+        this.polarText = '当日极夜：太阳全天不升，但仍有黄金时刻窗口。';
+      } else if (hasBlue) {
+        this.polarText = '当日极夜：太阳全天不升，但仍有蓝调窗口。';
+      } else {
+        this.polarText = '当日极夜：太阳全天低于地平线，今日没有黄金/蓝调窗口。';
+      }
     } else {
       this.polarText = '';
     }
@@ -101,7 +127,7 @@ export struct SunPathPage {
 
   /** 用真实本地日边界（夏令时切换日可能是 23/25 小时）；不可用时置 0，界面按「无」处理 */
   private syncDayEnd(): void {
-    if (!Number.isFinite(this.dayStartUtc) || this.dayStartUtc <= 0) {
+    if (!Number.isFinite(this.dayStartUtc)) {
       this.dayEndUtc = 0;
       return;
     }

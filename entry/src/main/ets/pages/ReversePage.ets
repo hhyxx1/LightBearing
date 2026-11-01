@@ -4,7 +4,8 @@ import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, Candidate, SearchGoal, IdGen } from '../model/Models';
 import { Job, JobStatus } from '../model/BaseModels';
 import { SolarCalc } from '../services/SolarCalc';
-import { ReverseSearch, DayRange } from '../services/ReverseSearch';
+import { ReverseSearch, DayRange, SearchPlan } from '../services/ReverseSearch';
+import { LocalDayBounds } from '../services/LocalTimeResolver';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard,
@@ -118,24 +119,23 @@ export struct ReversePage {
       goal.daylightOnly = this.daylightOnly;
       goal.maxResults = 30;
 
-      // 逐日取真实本地日区间 [startUtc, endUtc)；被整日跳过的日期不参与搜索，也不计入进度
-      const ranges: DayRange[] = [];
+      // 逐日取真实本地日边界；真正被整日跳过的日期可跳过并计数，数据不可用必须中止
+      const boundsList: LocalDayBounds[] = [];
       const startLocal = TimeUtil.toLocal(place.tzId, TimeUtil.now());
       if (!startLocal.valid) {
         throw new Error('机位时区不可用，无法确定本地日期');
       }
       let cursorDate: number[] = [startLocal.year, startLocal.month, startLocal.day];
       for (let i = 0; i < days; i++) {
-        const bounds = TimeUtil.localDayBounds(place.tzId, cursorDate[0], cursorDate[1], cursorDate[2]);
-        if (bounds.valid) {
-          ranges.push(DayRange.of(bounds.startUtc, bounds.endUtc));
-        }
+        boundsList.push(TimeUtil.localDayBounds(place.tzId, cursorDate[0], cursorDate[1], cursorDate[2]));
         const next = new Date(Date.UTC(cursorDate[0], cursorDate[1] - 1, cursorDate[2] + 1));
         cursorDate = [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()];
       }
-      if (ranges.length === 0) {
-        throw new Error('所选日期范围内没有可搜索的本地日（时区数据不可用）');
+      const plan: SearchPlan = SearchPlan.plan(boundsList);
+      if (plan.errorText.length > 0) {
+        throw new Error(plan.errorText);
       }
+      const ranges: DayRange[] = plan.ranges;
 
       const t0 = new Date().getTime();
       const th = AppState.thresholds();
@@ -161,9 +161,11 @@ export struct ReversePage {
       this.candidates = limited;
       this.searched = true;
       const cancelled = this.cancelRequested;
+      const skippedNote = plan.skippedDays > 0 ? `，跳过 ${plan.skippedDays} 天不存在的日期` : '';
+      const scopeNote = `请求 ${plan.requestedDays} 天、实际搜索 ${ranges.length} 天${skippedNote}`;
       this.summary = cancelled
-        ? `已取消，保留已找到的 ${limited.length} 个候选（用时 ${this.lastMs} ms）。`
-        : `在 ${days} 天内按 5 分钟粗扫并逐级细化，命中 ${limited.length} 个时间窗口（用时 ${this.lastMs} ms）。`;
+        ? `已取消：${scopeNote}，保留已找到的 ${limited.length} 个候选（用时 ${this.lastMs} ms）。`
+        : `${scopeNote}，按 5 分钟粗扫并逐级细化，命中 ${limited.length} 个时间窗口（用时 ${this.lastMs} ms）。`;
       await AppDb.updateJob(jobId, cancelled ? JobStatus.CANCELLED : JobStatus.DONE,
         cancelled ? this.sheetPercent : 100, '');
       if (!cancelled) {
