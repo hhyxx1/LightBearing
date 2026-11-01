@@ -5,6 +5,8 @@ import { Place, ShootPlan, IdGen } from '../model/Models';
 import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { Timeline, TimelineModel } from '../services/Timeline';
+import { SliderMapping, SliderValue, EventText } from '../services/TimeSelection';
+import { TimelineLabels } from '../services/TimelineLabels';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, MetricTile, SectionCard, Dialogs } from '../components/Widgets';
 import { SunPathChart, CompassDial } from '../components/Charts';
@@ -26,7 +28,8 @@ export struct SunPathPage {
   @State dayStartUtc: number = 0;
   @State dayEndUtc: number = 0;
   @State selectedUtc: number = 0;
-  @State sliderMinutes: number = 720;
+  @State sliderProgress: number = 500;
+  @State selectedLabel: string = '--';
   @State azText: string = '--';
   @State altText: string = '--';
   @State phaseLabel: string = '';
@@ -64,8 +67,7 @@ export struct SunPathPage {
       this.dayStartUtc = TimeUtil.startOfLocalDay(place.tzId, TimeUtil.now());
       this.syncDayEnd();
       this.syncPickedDate();
-      this.sliderMinutes = 720;
-      this.applyTime(12, 0);
+      this.applyProgress(500);
       this.ready = true;
     } catch (err) {
       this.errorText = `读取机位失败：${(err as Error).message}`;
@@ -78,21 +80,26 @@ export struct SunPathPage {
     this.pickedDate = new Date(local.year, local.month - 1, local.day);
   }
 
-  private applyTime(hour: number, minute: number): void {
+  private applyProgress(progress: number): void {
     const place = AppState.currentPlace;
     if (place === undefined) {
       return;
     }
-    const local = TimeUtil.toLocal(place.tzId, this.dayStartUtc);
-    this.selectedUtc = TimeUtil.fromLocal(place.tzId, local.year, local.month, local.day, hour, minute);
-    // 时区数据异常时会得到 NaN：不允许把 NaN 传进 position()
-    if (!Number.isFinite(this.selectedUtc)) {
+    // Slider 是真实 UTC 时间轴上的位置：23/24/25/23.5/24.5 小时都能完整选择，
+    // DST 缺口不会被选中，回拨造成的两个 01:30 各有独立位置
+    this.sliderProgress = progress;
+    const model: TimelineModel = Timeline.fromBounds(this.dayStartUtc, this.dayEndUtc);
+    const point = SliderMapping.toUtc(model, progress);
+    if (!point.valid) {
       this.azText = '--';
       this.altText = '--';
-      this.phaseLabel = '时间不可用';
+      this.phaseLabel = '时间轴不可用';
+      this.selectedLabel = '时间轴不可用';
       this.azValid = false;
       return;
     }
+    this.selectedUtc = point.utcMs;
+    this.selectedLabel = `${TimelineLabels.formatLocal(this.selectedUtc, place.tzId)}（${TimelineLabels.offsetText(TimeUtil.offsetMs(place.tzId, this.selectedUtc))}）`;
     const pos: SunPosition = SolarCalc.position(this.selectedUtc, place.latWgs84, place.lonWgs84);
     if (!Number.isFinite(pos.azimuthDeg) || !Number.isFinite(pos.altitudeDeg)) {
       this.azText = '--';
@@ -112,10 +119,8 @@ export struct SunPathPage {
     const th = AppState.thresholds();
     const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th,
       this.dayEndUtc);
-    this.sunriseText = ev.sunriseState === EventState.AVAILABLE
-      ? TimeUtil.formatTime(place.tzId, ev.sunriseUtc) : '无';
-    this.sunsetText = ev.sunsetState === EventState.AVAILABLE
-      ? TimeUtil.formatTime(place.tzId, ev.sunsetUtc) : '无';
+    this.sunriseText = EventText.describe(ev.sunriseState, TimeUtil.formatTime(place.tzId, ev.sunriseUtc));
+    this.sunsetText = EventText.describe(ev.sunsetState, TimeUtil.formatTime(place.tzId, ev.sunsetUtc));
     this.noonText = ev.noonState === EventState.AVAILABLE
       ? TimeUtil.formatTime(place.tzId, ev.solarNoonUtc) : '--:--';
     this.noonAltText = ev.dayValid ? `${ev.noonAltitudeDeg.toFixed(1)}°` : '--';
@@ -163,12 +168,11 @@ export struct SunPathPage {
     }
     this.syncDayEnd();
     this.syncPickedDate();
-    this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
+    this.applyProgress(this.sliderProgress);
   }
 
-  private onSlider(minutes: number): void {
-    this.sliderMinutes = minutes;
-    this.applyTime(Math.floor(minutes / 60), Math.round(minutes % 60));
+  private onSlider(progress: number): void {
+    this.applyProgress(progress);
   }
 
   private async saveAsPlan(): Promise<void> {
@@ -239,7 +243,7 @@ export struct SunPathPage {
               this.dayStartUtc = TimeUtil.startOfLocalDay(place.tzId, TimeUtil.now());
               this.syncDayEnd();
               this.syncPickedDate();
-              this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
+              this.applyProgress(this.sliderProgress);
             }
           })
         Button('后一天')
@@ -266,7 +270,7 @@ export struct SunPathPage {
           this.dayStartUtc = picked.valid ? picked.startUtc : 0;
           this.dayEndUtc = picked.valid ? picked.endUtc : 0;
           this.pickedDate = value;
-          this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
+          this.applyProgress(this.sliderProgress);
         })
     }
     .width('100%')
@@ -327,7 +331,7 @@ export struct SunPathPage {
               blueLower: AppState.settings.blueLower,
               chartHeight: 230
             })
-            Slider({ value: this.sliderMinutes, min: 0, max: 1439, step: 1 })
+            Slider({ value: this.sliderProgress, min: 0, max: 1000, step: 1 })
               .selectedColor($r('app.color.lb_primary'))
               .trackColor($r('app.color.lb_panel2'))
               .blockColor($r('app.color.lb_primary'))
@@ -336,7 +340,7 @@ export struct SunPathPage {
                 this.onSlider(Math.round(value));
               })
               .accessibilityText('拖动选择时刻')
-            Text(`选定 ${TimeUtil.formatTime(this.tzId, this.selectedUtc)} · ${this.phaseLabel}`)
+            Text(`选定 ${this.selectedLabel} · ${this.phaseLabel}`)
               .fontSize(FontSize.CAPTION)
               .fontColor($r('app.color.lb_accent'))
           }

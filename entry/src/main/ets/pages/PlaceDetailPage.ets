@@ -3,6 +3,7 @@ import { AppState } from '../common/AppState';
 import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place } from '../model/Models';
 import { SolarCalc, SolarEvents, EventState, WindowState } from '../services/SolarCalc';
+import { EventText } from '../services/TimeSelection';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, SectionCard, EmptyState, ErrorCard, NoticeBar, MetricTile,
@@ -56,10 +57,8 @@ export struct PlaceDetailPage {
         }
       }
       const ev: SolarEvents = SolarCalc.events(dayStart, found.latWgs84, found.lonWgs84, dayEnd);
-      this.sunriseText = ev.sunriseState === EventState.AVAILABLE
-        ? TimeUtil.formatTime(found.tzId, ev.sunriseUtc) : '无';
-      this.sunsetText = ev.sunsetState === EventState.AVAILABLE
-        ? TimeUtil.formatTime(found.tzId, ev.sunsetUtc) : '无';
+      this.sunriseText = EventText.describe(ev.sunriseState, TimeUtil.formatTime(found.tzId, ev.sunriseUtc));
+      this.sunsetText = EventText.describe(ev.sunsetState, TimeUtil.formatTime(found.tzId, ev.sunsetUtc));
       const w = SolarCalc.lightWindows(dayStart, found.latWgs84, found.lonWgs84, AppState.thresholds(), dayEnd);
       this.goldenText = w.goldenEveningState === WindowState.AVAILABLE
         ? `${TimeUtil.formatTime(found.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(found.tzId, w.goldenEveningEndUtc)}`

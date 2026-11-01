@@ -4,6 +4,8 @@ import { FontSize, Radius, Spacing, MIN_TOUCH, ThemeColors } from '../common/The
 import { Place, ShootPlan, Candidate } from '../model/Models';
 import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { Timeline, TimelineModel } from '../services/Timeline';
+import { SliderMapping, SliderValue, EventText } from '../services/TimeSelection';
 import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
   PermissionGate, ProjectTile, HeroCard, SkeletonCard, Dialogs } from '../components/Widgets';
@@ -27,7 +29,7 @@ export struct HomePage {
   @State locating: boolean = false;
   @State nowUtc: number = 0;
   @State selectedUtc: number = 0;
-  @State sliderMinutes: number = 0;
+  @State sliderProgress: number = 500;
   @State placeName: string = '';
   @State tzId: string = '';
   @State posAz: number = 0;
@@ -95,7 +97,9 @@ export struct HomePage {
       this.applyDayBounds(place.tzId, this.nowUtc);
       this.selectedUtc = this.nowUtc;
       const local = TimeUtil.toLocal(place.tzId, this.nowUtc);
-      this.sliderMinutes = local.hour * 60 + local.minute;
+      const initModel: TimelineModel = Timeline.fromBounds(this.dayStartUtc, this.dayEndUtc);
+      const initSlider: SliderValue = SliderMapping.toSlider(initModel, this.selectedUtc);
+      this.sliderProgress = initSlider.valid ? initSlider.value : 500;
       this.recompute(place, this.selectedUtc);
       this.loadPlans(place);
       this.ready = true;
@@ -134,9 +138,9 @@ export struct HomePage {
     this.phaseLabel = SolarCalc.phaseLabel(phase);
 
     const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84, this.dayEndUtc);
-    this.sunriseText = ev.sunriseState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.sunriseUtc) : '无';
-    this.sunsetText = ev.sunsetState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.sunsetUtc) : '无';
-    this.civilText = ev.civilDuskState === EventState.AVAILABLE ? TimeUtil.formatTime(place.tzId, ev.civilDuskUtc) : '无';
+    this.sunriseText = EventText.describe(ev.sunriseState, TimeUtil.formatTime(place.tzId, ev.sunriseUtc));
+    this.sunsetText = EventText.describe(ev.sunsetState, TimeUtil.formatTime(place.tzId, ev.sunsetUtc));
+    this.civilText = EventText.describe(ev.civilDuskState, TimeUtil.formatTime(place.tzId, ev.civilDuskUtc));
     if (!ev.dayValid) {
       this.polarText = '本地日边界不可用，无法判定当日太阳事件。';
     } else if (ev.polarState === 1) {
@@ -163,16 +167,19 @@ export struct HomePage {
       : '无';
   }
 
-  private onSliderChange(minutes: number): void {
-    this.sliderMinutes = minutes;
+  private onSliderChange(progress: number): void {
+    this.sliderProgress = progress;
     const place = AppState.currentPlace;
     if (place === undefined) {
       return;
     }
-    const local = TimeUtil.toLocal(place.tzId, this.dayStartUtc);
-    const hour = Math.floor(minutes / 60);
-    const minute = Math.round(minutes % 60);
-    this.selectedUtc = TimeUtil.fromLocal(place.tzId, local.year, local.month, local.day, hour, minute);
+    // Slider 是真实 UTC 时间轴上的位置：DST 缺口不会被选中，重复小时各有独立位置
+    const model: TimelineModel = Timeline.fromBounds(this.dayStartUtc, this.dayEndUtc);
+    const point = SliderMapping.toUtc(model, progress);
+    if (!point.valid) {
+      return;
+    }
+    this.selectedUtc = point.utcMs;
     this.recompute(place, this.selectedUtc);
   }
 
@@ -263,9 +270,9 @@ export struct HomePage {
         chartHeight: 200
       })
       Slider({
-        value: this.sliderMinutes,
+        value: this.sliderProgress,
         min: 0,
-        max: 1439,
+        max: 1000,
         step: 1,
         style: SliderStyle.OutSet
       })
@@ -276,7 +283,7 @@ export struct HomePage {
         .onChange((value: number, mode: SliderChangeMode) => {
           this.onSliderChange(Math.round(value));
         })
-        .accessibilityText('拖动选择今日时刻')
+        .accessibilityText('拖动选择今日时刻（按真实本地日时间轴，夏令时缺口会自动跳过）')
       Text('拖动调整时刻，曲线为按当前机位坐标实时计算的全天太阳高度角。')
         .fontSize(FontSize.CAPTION)
         .fontColor($r('app.color.lb_muted'))

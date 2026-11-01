@@ -4,6 +4,9 @@ import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, ChecklistItem, IdGen } from '../model/Models';
 import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { PlanTimeSelection, TimeSelection, SaveCheck } from '../services/TimeSelection';
+import { LocalResolveStatus } from '../services/LocalTimeResolver';
+import { TimelineLabels } from '../services/TimelineLabels';
 import { AppDb } from '../repository/AppDb';
 import { ExportService, ExportResult } from '../services/ExportService';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
@@ -71,6 +74,13 @@ export struct PlannerPage {
   @State checklist: ChecklistItem[] = [];
   @State newItemText: string = '';
   @State hint: string = '';
+  /** 当前本地时间的解析状态（GAP/OVERLAP/INVALID/UNAVAILABLE）与提示 */
+  @State timeMessage: string = '';
+  @State overlapOpen: boolean = false;
+  @State overlapLabels: string[] = [];
+  private selection: PlanTimeSelection = new PlanTimeSelection();
+  /** 用户本次是否主动改过时间：未改时编辑已有计划必须保留原 UTC */
+  private timeEdited: boolean = false;
   @State exporting: boolean = false;
   @State pickedDate: Date = new Date();
 
@@ -112,6 +122,11 @@ export struct PlannerPage {
     this.placeIndex = 0;
     const place = this.places[0];
     this.selectedUtc = TimeUtil.now();
+    this.timeMessage = '';
+    this.overlapOpen = false;
+    this.overlapLabels = [];
+    this.selection = new PlanTimeSelection();
+    this.timeEdited = false;
     const local = TimeUtil.toLocal(place.tzId, this.selectedUtc);
     this.pickedDate = new Date(local.year, local.month - 1, local.day);
     const pos = SolarCalc.position(this.selectedUtc, place.latWgs84, place.lonWgs84);
@@ -136,7 +151,13 @@ export struct PlannerPage {
       }
     }
     this.placeIndex = idx;
+    // 已有计划必须保留原 UTC：不经过任何 fromLocal 重算，也不自动选较早候选
     this.selectedUtc = plan.selectedUtc;
+    this.timeMessage = '';
+    this.overlapOpen = false;
+    this.overlapLabels = [];
+    this.selection = new PlanTimeSelection();
+    this.timeEdited = false;
     const local = TimeUtil.toLocal(plan.tzId, plan.selectedUtc);
     this.pickedDate = new Date(local.year, local.month - 1, local.day);
     this.azText = plan.targetAzimuth.toFixed(1);
@@ -161,10 +182,64 @@ export struct PlannerPage {
     return this.places[this.placeIndex];
   }
 
+  /**
+   * 本地时间 → UTC 的唯一入口。
+   * UNIQUE 直接采用；OVERLAP 交给用户选择；GAP/INVALID/UNAVAILABLE 一律不改动 selectedUtc。
+   */
+  private applyLocalDateTime(year: number, month: number, day: number, hour: number, minute: number): void {
+    const place = this.currentPlace();
+    if (place === undefined) {
+      return;
+    }
+    const result = TimeUtil.resolveLocal(place.tzId, year, month, day, hour, minute);
+    const sel = TimeSelection.fromResolve(result);
+    this.selection = sel;
+    this.timeMessage = sel.message;
+    this.timeEdited = true;
+    const labels: string[] = [];
+    if (sel.status === LocalResolveStatus.OVERLAP) {
+      for (let i = 0; i < sel.candidatesUtc.length; i++) {
+        const utc = sel.candidatesUtc[i];
+        labels.push(`第 ${i + 1} 次 ${TimelineLabels.formatLocal(utc, place.tzId)}` +
+          `（${TimelineLabels.offsetText(sel.candidateOffsets[i])}）`);
+      }
+    }
+    this.overlapLabels = labels;
+    this.overlapOpen = sel.status === LocalResolveStatus.OVERLAP;
+    if (sel.status === LocalResolveStatus.UNIQUE) {
+      this.selectedUtc = sel.candidatesUtc[0];
+      this.overlapOpen = false;
+    }
+    // GAP / OVERLAP 未选择 / INVALID / UNAVAILABLE：保留原 selectedUtc，禁止保存
+  }
+
+  private chooseOverlap(index: number): void {
+    const utc = TimeSelection.choose(this.selection, index);
+    if (!Number.isFinite(utc)) {
+      return;
+    }
+    this.selectedUtc = utc;
+    this.timeMessage = '';
+    this.overlapOpen = false;
+    this.timeEdited = true;
+  }
+
   private async savePlan(): Promise<void> {
     const place = this.currentPlace();
     if (place === undefined) {
       this.hint = '请先选择机位。';
+      return;
+    }
+    // 最终校验：时刻有限、机位合法、时区有效、属于目标当地日、GAP/OVERLAP 已解决
+    const bounds = TimeUtil.localDayBounds(place.tzId, this.pickedDate.getFullYear(),
+      this.pickedDate.getMonth() + 1, this.pickedDate.getDate());
+    const check: SaveCheck = TimeSelection.validateForSave(this.selectedUtc,
+      bounds.valid ? bounds.startUtc : NaN, bounds.valid ? bounds.endUtc : NaN,
+      place.latWgs84, place.lonWgs84, TimeUtil.isValidTimeZoneId(place.tzId),
+      this.timeEdited ? this.selection : null);
+    if (!check.ok) {
+      this.hint = check.errorText;
+      Dialogs.toast(this.getUIContext(), check.errorText);
       return;
     }
     try {
@@ -358,8 +433,8 @@ export struct PlannerPage {
           const place = this.currentPlace();
           if (place !== undefined) {
             const local = TimeUtil.toLocal(place.tzId, this.selectedUtc);
-            this.selectedUtc = TimeUtil.fromLocal(place.tzId, value.getFullYear(), value.getMonth() + 1,
-              value.getDate(), local.hour, local.minute);
+            this.applyLocalDateTime(value.getFullYear(), value.getMonth() + 1, value.getDate(),
+              local.hour, local.minute);
           }
         })
 
@@ -374,9 +449,30 @@ export struct PlannerPage {
           }
           const hour = value.hour === undefined ? 12 : value.hour;
           const minute = value.minute === undefined ? 0 : value.minute;
-          this.selectedUtc = TimeUtil.fromLocal(place.tzId, this.pickedDate.getFullYear(),
-            this.pickedDate.getMonth() + 1, this.pickedDate.getDate(), hour, minute);
+          this.applyLocalDateTime(this.pickedDate.getFullYear(), this.pickedDate.getMonth() + 1,
+            this.pickedDate.getDate(), hour, minute);
         })
+
+      if (this.timeMessage.length > 0) {
+        NoticeBar({ text: this.timeMessage })
+      }
+      if (this.overlapOpen) {
+        Column({ space: Spacing.S }) {
+          ForEach(this.overlapLabels, (labelText: string, index: number) => {
+            Button(labelText)
+              .type(ButtonType.Normal)
+              .height(MIN_TOUCH)
+              .width('100%')
+              .borderRadius(Radius.BUTTON)
+              .backgroundColor($r('app.color.lb_panel2'))
+              .fontColor($r('app.color.lb_ink'))
+              .onClick(() => {
+                this.chooseOverlap(index);
+              })
+          }, (labelText: string) => labelText)
+        }
+        .width('100%')
+      }
 
       NumberField({
         label: '目标方位', unit: '°', valueText: this.azText, placeholder: '0-360',

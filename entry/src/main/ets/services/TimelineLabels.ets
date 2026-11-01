@@ -64,18 +64,26 @@ export class TimelineLabels {
     return TimelineLabels.disambiguate(spaced, tzId);
   }
 
-  /** 与 DST 标记过近的常规刻度让位，避免 Canvas 文字重叠 */
+  /** 与 DST 标记过近的常规刻度让位：标记前后**双向**避让，并按标记实际宽度估算间距 */
   private static dropOverlaps(ticks: TimelineTick[], width: number): TimelineTick[] {
     const usable = Math.max(1, width - 16);
+    const markers: TimelineTick[] = [];
+    for (const t of ticks) {
+      if (t.isTransition) {
+        markers.push(t);
+      }
+    }
     const keep: TimelineTick[] = [];
     for (const t of ticks) {
+      if (t.isTransition) {
+        keep.push(t);
+        continue;
+      }
       let blocked = false;
-      if (!t.isTransition) {
-        for (const k of keep) {
-          if (k.isTransition && Math.abs(k.ratio - t.ratio) * usable < MIN_LABEL_GAP_PX) {
-            blocked = true;
-            break;
-          }
+      for (const m of markers) {
+        if (Math.abs(m.ratio - t.ratio) * usable < TimelineLabels.markerGapPx(m.label)) {
+          blocked = true;
+          break;
         }
       }
       if (!blocked) {
@@ -83,6 +91,12 @@ export class TimelineLabels {
       }
     }
     return keep;
+  }
+
+  /** DST 标记的占位宽度（等宽近似估算），保证 DST+05:45 之类的长文本不被裁切 */
+  static markerGapPx(label: string): number {
+    const estimated = 10.0 + label.length * 7.4;
+    return Math.max(MIN_LABEL_GAP_PX, estimated);
   }
 
   /** UTC → 本地 HH:mm；时区不可用返回「--:--」 */
