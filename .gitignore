@@ -1,6 +1,8 @@
 /node_modules
 /oh_modules
 /local.properties
+# 本地签名配置（含证书路径与口令）不入库；仓库保留 build-profile.template.json5
+/build-profile.json5
 /.idea
 **/build
 /.hvigor
@@ -13,4 +15,5 @@
 /build.log
 /testbuild.log
 /testrun*.log
+/unit-test.log
 /layout.json
