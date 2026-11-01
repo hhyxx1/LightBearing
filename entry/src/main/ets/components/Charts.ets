@@ -274,6 +274,13 @@ export struct CompassDial {
     const w = ctx.width;
     const h = ctx.height;
     ctx.clearRect(0, 0, w, h);
+    // 防御：任何非有限值都不进入角度/坐标计算，避免 NaN 指针
+    if (!Number.isFinite(this.sunAzimuth) || !Number.isFinite(this.sunAltitude)) {
+      ctx.fillStyle = this.colors.muted;
+      ctx.font = `${FontSize.CAPTION}vp sans-serif`;
+      ctx.fillText('方位不可用', 12, h / 2);
+      return;
+    }
     const cx = w / 2;
     const cy = h / 2;
     const radius = Math.min(w, h) / 2 - 16;

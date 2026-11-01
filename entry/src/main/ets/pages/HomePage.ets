@@ -255,6 +255,7 @@ export struct HomePage {
         lon: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84,
         tzId: this.tzId,
         dayStartUtc: this.dayStartUtc,
+        dayEndUtc: this.dayEndUtc,
         selectedUtc: this.selectedUtc,
         goldenUpper: AppState.settings.goldenUpper,
         goldenLower: AppState.settings.goldenLower,

@@ -180,9 +180,39 @@ export default function timeZoneRealTest() {
       const labelled = TimelineLabels.disambiguate([first, second], 'America/New_York');
       expect(labelled[0].label !== labelled[1].label).assertTrue();
 
-      // 半小时时区的短偏移
-      expect(TimelineLabels.offsetShort(Date.UTC(2026, 9, 3, 13, 30, 0), 'Australia/Lord_Howe'))
-        .assertEqual('+10.5');
+      // 偏移文本改用毫秒计算（格式升级：原 +10.5 → UTC+10:30，不是时区数据变化）
+      expect(TimelineLabels.offsetText(TimeUtil.offsetMs('Australia/Lord_Howe',
+        Date.UTC(2026, 9, 3, 13, 30, 0)))).assertEqual('UTC+10:30');
+      expect(TimelineLabels.offsetText(TimeUtil.offsetMs('Asia/Kathmandu',
+        Date.UTC(2026, 9, 30, 0, 0, 0)))).assertEqual('UTC+05:45');
+
+      // 真实 ticks()：秋季当天必须出现 DST 切换标记，态序严格递增
+      const fall: TimelineModel = Timeline.fromBounds(Date.UTC(2026, 10, 1, 4, 0, 0),
+        Date.UTC(2026, 10, 2, 5, 0, 0));
+      const fallTicks: TimelineTick[] = TimelineLabels.ticks(fall, 'America/New_York', 360);
+      expect(fallTicks.length >= 4).assertTrue();
+      let transitionMarkers = 0;
+      for (let i = 0; i < fallTicks.length; i++) {
+        expect(fallTicks[i].ratio >= 0 && fallTicks[i].ratio < 1).assertTrue();
+        if (fallTicks[i].isTransition) {
+          transitionMarkers++;
+          expect(fallTicks[i].label.startsWith('DST')).assertTrue();
+        }
+        if (i > 0) {
+          expect(fallTicks[i].utcMs > fallTicks[i - 1].utcMs).assertTrue();
+        }
+      }
+      expect(transitionMarkers).assertEqual(1);
+
+      // 1970 年前的负时间戳刻度（含比例 1 对应的合法 -1）必须能生成标签
+      const preEpoch: TimelineModel = Timeline.fromBounds(Date.UTC(1969, 11, 30, 16, 0, 0),
+        Date.UTC(1969, 11, 31, 16, 0, 0));
+      const preTicks: TimelineTick[] = TimelineLabels.ticks(preEpoch, 'Asia/Shanghai', 360);
+      expect(preTicks.length >= 4).assertTrue();
+      for (const t of preTicks) {
+        expect(t.utcMs < 0).assertTrue();
+        expect(t.label !== '--:--').assertTrue();
+      }
     });
 
     it('start_of_day_and_add_days_follow_real_bounds', 0, () => {

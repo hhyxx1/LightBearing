@@ -30,6 +30,10 @@ export struct SunPathPage {
   @State azText: string = '--';
   @State altText: string = '--';
   @State phaseLabel: string = '';
+  /** 太阳方位可用性：false 时不绘制罗盘指针，避免把默认 0° 伪装成有效方位 */
+  @State azValid: boolean = false;
+  @State sunAz: number = 0;
+  @State sunAlt: number = 0;
   @State sunriseText: string = '--:--';
   @State sunsetText: string = '--:--';
   @State noonText: string = '--:--';
@@ -86,9 +90,20 @@ export struct SunPathPage {
       this.azText = '--';
       this.altText = '--';
       this.phaseLabel = '时间不可用';
+      this.azValid = false;
       return;
     }
     const pos: SunPosition = SolarCalc.position(this.selectedUtc, place.latWgs84, place.lonWgs84);
+    if (!Number.isFinite(pos.azimuthDeg) || !Number.isFinite(pos.altitudeDeg)) {
+      this.azText = '--';
+      this.altText = '--';
+      this.phaseLabel = '方位不可用';
+      this.azValid = false;
+      return;
+    }
+    this.sunAz = pos.azimuthDeg;
+    this.sunAlt = pos.altitudeDeg;
+    this.azValid = true;
     this.azText = `${pos.azimuthDeg.toFixed(1)}°`;
     this.altText = `${pos.altitudeDeg.toFixed(1)}°`;
     this.phaseLabel = SolarCalc.phaseLabel(SolarCalc.phaseOf(pos.altitudeDeg, AppState.thresholds()));
@@ -360,16 +375,19 @@ export struct SunPathPage {
               .fontSize(FontSize.BODY_L)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.lb_ink'))
-            CompassDial({
-              sunAzimuth: AppState.currentPlace === undefined ? 0
-                : SolarCalc.position(this.selectedUtc, AppState.currentPlace.latWgs84, AppState.currentPlace.lonWgs84).azimuthDeg,
-              sunAltitude: AppState.currentPlace === undefined ? 0
-                : SolarCalc.position(this.selectedUtc, AppState.currentPlace.latWgs84, AppState.currentPlace.lonWgs84).altitudeDeg,
-              deviceHeading: SolarCalc.position(this.selectedUtc, AppState.currentPlace === undefined ? 0 : AppState.currentPlace.latWgs84,
-                AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84).azimuthDeg,
-              correction: 0,
-              dialSize: 240
-            })
+            if (this.azValid) {
+              CompassDial({
+                sunAzimuth: this.sunAz,
+                sunAltitude: this.sunAlt,
+                deviceHeading: this.sunAz,
+                correction: 0,
+                dialSize: 240
+              })
+            } else {
+              Text('太阳方位不可用：当前时刻或机位数据无效，不显示方位指针。')
+                .fontSize(FontSize.CAPTION)
+                .fontColor($r('app.color.lb_muted'))
+            }
             Text('金色指针为太阳方位；此处不使用传感器，仅作为计算结果的方位提示。现场实测请到「现场罗盘」。')
               .fontSize(FontSize.CAPTION)
               .fontColor($r('app.color.lb_muted'))

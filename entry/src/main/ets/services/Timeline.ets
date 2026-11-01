@@ -29,6 +29,12 @@ export class TimelineModel {
   }
 }
 
+/** 比例 → 时间戳结果：显式状态，避免用 -1 之类哨兵与合法负时间戳冲突 */
+export class TimelinePoint {
+  valid: boolean = false;
+  utcMs: number = 0;
+}
+
 export class Timeline {
   /** 由真实日界构造时间轴；非有限值或 end <= start 判为无效，绝不回退成 24 小时 */
   static fromBounds(startUtc: number, endUtc: number): TimelineModel {
@@ -82,13 +88,19 @@ export class Timeline {
     return [0, 0.25, 0.5, 0.75];
   }
 
-  /** 比例 → UTC 时刻；越界返回 -1（半开区间，末端取 endUtc - 1） */
-  static utcAtRatio(model: TimelineModel, ratio: number): number {
+  /**
+   * 比例 → UTC 时刻（半开区间，末端取 endUtc - 1）。
+   * 用 TimelinePoint 表达有效性：1970 年前的负时间戳（含合法的 -1）不会被误判为失败。
+   */
+  static pointAtRatio(model: TimelineModel, ratio: number): TimelinePoint {
+    const p = new TimelinePoint();
     if (!model.valid || !Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
-      return -1;
+      return p;
     }
     const t = model.startUtc + Math.round(ratio * model.durationMs);
-    return t < model.endUtc ? t : model.endUtc - 1;
+    p.valid = true;
+    p.utcMs = t < model.endUtc ? t : model.endUtc - 1;
+    return p;
   }
 
   /** 多日期对照的横轴标签（统一为「当地日期进度」，不冒充钟点） */

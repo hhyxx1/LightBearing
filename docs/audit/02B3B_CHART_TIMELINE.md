@@ -126,3 +126,90 @@ Tests run: 11, Failure: 0, Error: 0, Pass: 11
 3. `CalendarPage` 格子的 3/4 无效状态仍只有 CSV/a11y 呈现，需要独立样式。
 4. `OUTSIDE_DAY` 事件目前显示「无」，需要「事件在相邻日期」的提示文案。
 5. Canvas 像素级效果与长文本刻度的实际观感需要人工真机核验。
+
+---
+
+# 补充验收修复（复审后追加）
+
+## F1. 主页曲线恒显示「时间轴不可用」
+
+**根因**：`SunPathChart` 新增 `dayEndUtc`（默认 0）后，`HomePage.timeSection()` 仍只传 `dayStartUtc`，
+于是 `Timeline.fromBounds(dayStart, 0)` 恒为无效 → 空状态。
+
+**修复**：`HomePage` 传入已算好的 `this.dayEndUtc`。全仓 `SunPathChart` 仅两处调用（`HomePage`、`SunPathPage`），
+两处现在都传真实起止；**没有**重新引入 24 小时回退，边界无效时仍显示明确空状态。
+
+## F2. 1970 年前有效 UTC 刻度被跳过
+
+**根因**：`TimelineLabels.ticks()` 用 `if (utcMs < 0 && ratio !== 0) continue;` 判断转换是否成功；
+而 `Timeline.utcAtRatio()` 用 `-1` 作失败哨兵——合法的 −1 毫秒时间戳与哨兵撞车。
+
+**修复**：
+- 新增 `TimelinePoint { valid, utcMs }` 与 `Timeline.pointAtRatio()`，用显式状态表达有效性；
+  删除 `utcAtRatio()` 的 −1 哨兵分支（不是只改测试预期）；
+- `TimelineLabels.ticks()` 改为读 `point.valid`，负时间戳（含 **−1**）完全合法。
+
+**测试**：`point_at_ratio_supports_epoch_and_negative_one` 用区间 `[−86400000, 0)` 断言
+`pointAtRatio(0.5) = -43200000`、`pointAtRatio(1) = -1` 且两者 `valid = true`。
+
+## F3. UTC+05:45 被近似成 +05:30
+
+**根因**：`offsetShort()` 只按「小数部分 > 0.25 就加 .5」推断半小时，
+无法表达 45 分钟（加德满都 +05:45、查塔姆 +12:45）。
+
+**修复**：改为按**毫秒**计算符号/小时/分钟：
+
+```ts
+TimelineLabels.offsetText(ms)   → 'UTC+05:45' / 'UTC-04:00' / 'UTC+00:00' / 'UTC+10:30' / 'UTC?'
+TimelineLabels.offsetSigned(ms) → '+05:45' / '-04:00'（用于刻度后缀与 DST 标记）
+```
+
+**格式升级说明**：真机用例原断言 `+10.5` 现改为 `UTC+10:30`——这是显示格式升级，不是时区数据变化。
+宿主机 `offset_text_uses_real_minutes` 覆盖 ±8h/‑4h/0/+10:30/+05:45/+12:45/‑03:30/NaN。
+
+## F4. 罗盘仍可能收到 NaN
+
+**根因**：`SunPathPage.build()` 里 `CompassDial` 的三个属性各自现场调用 `SolarCalc.position(this.selectedUtc, …)`，
+未复用 `applyTime()` 的防护，`selectedUtc` 非法时 NaN 直接进入 Canvas 角度计算。
+
+**修复**：
+- `applyTime()` 计算一次并写入 `sunAz/sunAlt`，同时维护 `azValid`；
+  非有限 `selectedUtc` 或非有限方位角/高度角都置 `azValid = false`；
+- `build()` 只在 `azValid` 时渲染 `CompassDial`，否则显示
+  「太阳方位不可用：当前时刻或机位数据无效，不显示方位指针。」——不再把默认 0° 伪装成有效方位；
+- `CompassDial.draw()` 增加防御：任一输入非有限就画「方位不可用」并直接返回。
+
+## F5. DST 重复小时在真实刻度中的可见性
+
+复审指出原设备用例只是手工构造两个刻度再调 `disambiguate()`，只证明格式能力。
+
+**修复**：`TimelineLabels.ticks()` 现在会向 `TimeUtil.transitionsBetween()` 查询当天跳变，
+在跳变 UTC 时刻插入 `DST±HH:MM` 标记刻度，并**挤掉**距该标记小于 46px 的常规刻度（防文字重叠）。
+常规刻度仍按真实 UTC 采样并做 UTC→本地转换，重复小时另有偏移后缀。
+
+真机用例 `timeline_labels_handle_dst_gap_and_overlap` 现在断言真实 `ticks()` 输出：
+
+- 纽约 2026-11-01（25h）：刻度数 ≥ 4、`isTransition` 标记恰好 1 个且标签以 `DST` 开头、UTC 严格递增；
+- 纽约 2026-03-08（23h）：标签中不存在 `02:xx`；
+- 1969-12-31 上海：刻度数 ≥ 4、全部 `utcMs < 0`、且标签不为 `--:--`。
+
+## 补充后的测试与构建
+
+```text
+宿主机：Tests run: 90, Failure: 0, Error: 0, Pass: 90   （原 88 + 新增 2 条）
+真机：  -s class TimeZoneReal → Tests run: 11, Failure: 0, Pass: 11
+应用构建：BUILD SUCCESSFUL，entry-default-signed.hap  2,146,868 bytes
+测试包构建：BUILD SUCCESSFUL；两 HAP 安装成功
+```
+
+## 真机视觉核查
+
+已用 `snapshot_display` 抓取真实主页截图：`docs/screenshots/31_2b3b_home.jpeg`
+（1224×2776，设备 `MIA-AL00`，2026-11-01 04:51）。
+
+**该截图显示的是「先确定一个机位」空状态**：当前设备数据库里没有已保存机位，
+因此主页的时间卡片与太阳曲线区域没有出现，**曲线视觉未完成核验**。
+如实记录为未验证项：需要在设备上创建一个机位后，再对主页、太阳轨迹页、时间对照页做人工视觉检查。
+
+代码层面可确认的部分：两处 `SunPathChart` 调用都已传入 `dayEndUtc`；曲线采样/坐标/刻度逻辑由
+90 条宿主机用例 + 11 条真机用例覆盖。

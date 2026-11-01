@@ -135,6 +135,27 @@ export class TimeUtil {
     return new I18nZoneProbe(tzId).offsetAt(utcMs);
   }
 
+  /** [startUtc, endUtc) 内的时区跳变（最多 4 次）；时区不可用时返回空数组 */
+  static transitionsBetween(tzId: string, startUtc: number, endUtc: number): ZoneTransitionInfo[] {
+    const out: ZoneTransitionInfo[] = [];
+    const probe = new I18nZoneProbe(tzId);
+    if (!probe.isValid() || !Number.isFinite(startUtc) || !Number.isFinite(endUtc) || !(endUtc > startUtc)) {
+      return out;
+    }
+    let cursor = startUtc - 1;
+    for (let i = 0; i < 4; i++) {
+      const t = probe.transitionAfter(cursor);
+      if (t === undefined || t.atUtc >= endUtc) {
+        break;
+      }
+      if (t.atUtc >= startUtc) {
+        out.push(t);
+      }
+      cursor = t.atUtc;
+    }
+    return out;
+  }
+
   /** 解析本地时间：明确给出唯一/缺口/重复/非法四种结果 */
   static resolveLocal(tzId: string, year: number, month: number, day: number,
     hour: number, minute: number): LocalResolveResult {

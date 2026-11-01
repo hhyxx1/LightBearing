@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { Timeline, TimelineModel } from '../main/ets/services/Timeline';
+import { Timeline, TimelineModel, TimelinePoint } from '../main/ets/services/Timeline';
+import { TimelineLabels } from '../main/ets/services/TimelineLabels';
 
 /**
  * 真实时间轴纯逻辑测试（无 Kit 依赖）。
@@ -120,7 +121,7 @@ export default function timelineTest() {
       const invalid = Timeline.fromBounds(SH_START, SH_START);
       expect(Timeline.sampleTimes(invalid, HOUR).length).assertEqual(0);
       expect(invalid.ratioOf(SH_START)).assertEqual(-1);
-      expect(Timeline.utcAtRatio(invalid, 0.5)).assertEqual(-1);
+      expect(Timeline.pointAtRatio(invalid, 0.5).valid).assertFalse();
 
       const good = Timeline.fromBounds(SH_START, SH_END);
       expect(good.ratioOf(NaN)).assertEqual(-1);
@@ -128,8 +129,8 @@ export default function timelineTest() {
       expect(good.ratioOf(SH_START - 1)).assertEqual(-1);
       expect(Timeline.sampleTimes(good, 0).length).assertEqual(0);
       expect(Timeline.sampleTimes(good, NaN).length).assertEqual(0);
-      expect(Timeline.utcAtRatio(good, -0.1)).assertEqual(-1);
-      expect(Timeline.utcAtRatio(good, 1.1)).assertEqual(-1);
+      expect(Timeline.pointAtRatio(good, -0.1).valid).assertFalse();
+      expect(Timeline.pointAtRatio(good, 1.1).valid).assertFalse();
     });
 
     it('tick_ratios_and_progress_labels', 0, () => {
@@ -146,10 +147,16 @@ export default function timelineTest() {
       expect(Timeline.progressLabel(1)).assertEqual('100%');
 
       const m = Timeline.fromBounds(SH_START, SH_END);
-      expect(Timeline.utcAtRatio(m, 0)).assertEqual(SH_START);
-      expect(Timeline.utcAtRatio(m, 0.5)).assertEqual(SH_START + 12 * HOUR);
+      const first: TimelinePoint = Timeline.pointAtRatio(m, 0);
+      expect(first.valid).assertTrue();
+      expect(first.utcMs).assertEqual(SH_START);
+      const mid: TimelinePoint = Timeline.pointAtRatio(m, 0.5);
+      expect(mid.valid).assertTrue();
+      expect(mid.utcMs).assertEqual(SH_START + 12 * HOUR);
       // 比例 1 取半开区间末端（end - 1）
-      expect(Timeline.utcAtRatio(m, 1)).assertEqual(SH_END - 1);
+      const last: TimelinePoint = Timeline.pointAtRatio(m, 1);
+      expect(last.valid).assertTrue();
+      expect(last.utcMs).assertEqual(SH_END - 1);
     });
 
     it('selected_time_outside_range_is_not_drawable', 0, () => {
@@ -158,6 +165,36 @@ export default function timelineTest() {
       expect(m.ratioOf(NY_FALL_END)).assertEqual(-1);
       const inside = m.ratioOf(NY_FALL_END - MINUTE);
       expect(inside >= 0 && inside < 1).assertTrue();
+    });
+    it('point_at_ratio_supports_epoch_and_negative_one', 0, () => {
+      // 区间 [1969-12-31T00:00Z, 1970-01-01T00:00Z) = [-86400000, 0)
+      const start = Date.UTC(1969, 11, 31, 0, 0, 0);
+      const end = Date.UTC(1970, 0, 1, 0, 0, 0);
+      expect(start).assertEqual(-86400000);
+      expect(end).assertEqual(0);
+      const m = Timeline.fromBounds(start, end);
+      expect(m.valid).assertTrue();
+      const mid: TimelinePoint = Timeline.pointAtRatio(m, 0.5);
+      expect(mid.valid).assertTrue();
+      expect(mid.utcMs).assertEqual(-43200000);
+      // 比例 1 → end - 1 = -1：这是一个合法的 UTC 时间戳，必须判定为有效
+      const last: TimelinePoint = Timeline.pointAtRatio(m, 1);
+      expect(last.valid).assertTrue();
+      expect(last.utcMs).assertEqual(-1);
+    });
+
+    it('offset_text_uses_real_minutes', 0, () => {
+      // 用毫秒算符号/小时/分钟，支持 45 分钟时区（加德满都 / 查塔姆）
+      expect(TimelineLabels.offsetText(8 * HOUR)).assertEqual('UTC+08:00');
+      expect(TimelineLabels.offsetText(-4 * HOUR)).assertEqual('UTC-04:00');
+      expect(TimelineLabels.offsetText(0)).assertEqual('UTC+00:00');
+      expect(TimelineLabels.offsetText(10 * HOUR + 30 * MINUTE)).assertEqual('UTC+10:30');
+      expect(TimelineLabels.offsetText(5 * HOUR + 45 * MINUTE)).assertEqual('UTC+05:45');
+      expect(TimelineLabels.offsetText(12 * HOUR + 45 * MINUTE)).assertEqual('UTC+12:45');
+      expect(TimelineLabels.offsetText(-(3 * HOUR + 30 * MINUTE))).assertEqual('UTC-03:30');
+      expect(TimelineLabels.offsetText(NaN)).assertEqual('UTC?');
+      expect(TimelineLabels.offsetSigned(5 * HOUR + 45 * MINUTE)).assertEqual('+05:45');
+      expect(TimelineLabels.offsetSigned(-(4 * HOUR))).assertEqual('-04:00');
     });
   });
 }
