@@ -30,6 +30,25 @@ function assertNear(actual: number, expectedUtc: number, label: string): void {
   expect(diff <= TOLERANCE_MS).assertTrue();
 }
 
+/** 断言某时刻太阳高度落在 [lower, upper) 带内（±0.05° 数值容差） */
+function assertInBand(utcMs: number, lat: number, lon: number, lower: number, upper: number): void {
+  const alt = SolarCalc.position(utcMs, lat, lon).altitudeDeg;
+  expect(alt >= lower - 0.05).assertTrue();
+  expect(alt < upper + 0.05).assertTrue();
+}
+
+/** 断言某时刻太阳高度低于带下边界 */
+function assertBelowBand(utcMs: number, lat: number, lon: number, lower: number): void {
+  const alt = SolarCalc.position(utcMs, lat, lon).altitudeDeg;
+  expect(alt < lower + 0.05).assertTrue();
+}
+
+/** 断言某时刻太阳高度不低于带上边界 */
+function assertAboveBand(utcMs: number, lat: number, lon: number, upper: number): void {
+  const alt = SolarCalc.position(utcMs, lat, lon).altitudeDeg;
+  expect(alt >= upper - 0.05).assertTrue();
+}
+
 export default function solarEventsTest() {
   describe('SolarEventsEdge', () => {
     it('polar_night_still_has_twilight', 0, () => {
@@ -94,19 +113,41 @@ export default function solarEventsTest() {
       expect(w.goldenEveningEndUtc).assertEqual(-1);
     });
 
-    it('no_blue_window_when_sun_never_below_minus6', 0, () => {
-      // 纬度 61.5° 夏至：最小高度 ≈ 23.44 + 61.5 - 90 ≈ -5.06°，
-      // 会两次越过 -4°（黄金时段存在）但从不低于 -6°（蓝调不存在）。
+    it('blue_window_exists_near_midnight_when_sun_stays_above_minus6', 0, () => {
+      // 原断言错误：把「太阳不穿过 -6°」等同于「没有蓝调」。
+      // 蓝调带是 [-6°, -4°)，61.5°N 夏至最小高度 ≈ -5.06°，午夜前后太阳正处在该带内，
+      // 因此蓝调存在，窗口从当地零点开始、到太阳升过 -4° 结束。
       const dayStart: number = Date.UTC(2026, 5, 20, 22, 0, 0);
+      const dayEnd = dayStart + 86400000.0;
       const w: LightWindow = SolarCalc.lightWindows(dayStart, 61.5, TROMSO_LON, LightThresholds.defaults());
-      expect(w.blueMorningStartUtc).assertEqual(-1);
-      expect(w.blueMorningEndUtc).assertEqual(-1);
-      expect(w.blueEveningStartUtc).assertEqual(-1);
-      expect(w.blueEveningEndUtc).assertEqual(-1);
+      // 蓝调必须存在
+      expect(w.blueMorningStartUtc).assertEqual(dayStart);
+      expect(w.blueMorningEndUtc > w.blueMorningStartUtc).assertTrue();
+      expect(w.blueEveningStartUtc < w.blueEveningEndUtc).assertTrue();
+      expect(w.blueEveningEndUtc).assertEqual(dayEnd);
+      // 代表时刻在带内：零点刚过仍在 [-6,-4)，升过 -4 之后就在带外
+      assertInBand(dayStart + 60000.0, 61.5, TROMSO_LON, -6.0, -4.0);
+      assertInBand(dayEnd - 60000.0, 61.5, TROMSO_LON, -6.0, -4.0);
+      assertAboveBand(w.blueMorningEndUtc + 300000.0, 61.5, TROMSO_LON, -4.0);
       // 黄金时段仍然存在且顺序正确
       expect(w.goldenMorningStartUtc >= 0).assertTrue();
       expect(w.goldenMorningStartUtc < w.goldenMorningEndUtc).assertTrue();
       expect(w.goldenEveningStartUtc < w.goldenEveningEndUtc).assertTrue();
+    });
+
+    it('blue_window_exists_in_polar_night_when_minus4_never_reached', 0, () => {
+      // 反例：72°N 冬至正午高度 ≈ 90 - (72 + 23.44) ≈ -5.44°，
+      // 太阳穿越 -6° 但到不了 -4°，正午附近落在蓝调带 [-6,-4) 内，蓝调必须存在。
+      const dayStart: number = Date.UTC(2026, 11, 20, 23, 0, 0); // 该坐标无夏令时，UTC 一路可用
+      const w: LightWindow = SolarCalc.lightWindows(dayStart, 72.0, TROMSO_LON, LightThresholds.defaults());
+      expect(w.goldenMorningStartUtc).assertEqual(-1); // 到不了 -4°，黄金带不存在
+      expect(w.blueMorningStartUtc >= 0).assertTrue();
+      expect(w.blueMorningStartUtc < w.blueMorningEndUtc).assertTrue();
+      expect(w.blueEveningStartUtc < w.blueEveningEndUtc).assertTrue();
+      // 窗口代表时刻在带内；午夜远离该带
+      const noon = SolarCalc.events(dayStart, 72.0, TROMSO_LON).solarNoonUtc;
+      assertInBand(noon, 72.0, TROMSO_LON, -6.0, -4.0);
+      assertBelowBand(dayStart + 3600000.0, 72.0, TROMSO_LON, -6.0);
     });
 
     it('golden_window_exists_in_polar_night', 0, () => {
@@ -136,6 +177,42 @@ export default function solarEventsTest() {
       expect(w.blueMorningStartUtc < w.blueMorningEndUtc).assertTrue();
       expect(w.blueEveningStartUtc < w.blueEveningEndUtc).assertTrue();
       expect(w.blueEveningEndUtc <= dayEnd).assertTrue();
+      // 代表时刻必须真的落在对应高度带内，邻近时刻必须落在带外
+      const goldenMidMorning = (w.goldenMorningStartUtc + w.goldenMorningEndUtc) / 2;
+      assertInBand(goldenMidMorning, 31.2304, 121.4737, -4.0, 6.0);
+      const goldenMidEvening = (w.goldenEveningStartUtc + w.goldenEveningEndUtc) / 2;
+      assertInBand(goldenMidEvening, 31.2304, 121.4737, -4.0, 6.0);
+      const blueMidMorning = (w.blueMorningStartUtc + w.blueMorningEndUtc) / 2;
+      assertInBand(blueMidMorning, 31.2304, 121.4737, -6.0, -4.0);
+      const blueMidEvening = (w.blueEveningStartUtc + w.blueEveningEndUtc) / 2;
+      assertInBand(blueMidEvening, 31.2304, 121.4737, -6.0, -4.0);
+      // 黄金晨窗开始前 5 分钟应低于 -4°；结束 5 分钟后应不低于 +6°
+      assertBelowBand(w.goldenMorningStartUtc - 300000.0, 31.2304, 121.4737, -4.0);
+      assertAboveBand(w.goldenMorningEndUtc + 300000.0, 31.2304, 121.4737, 6.0);
+    });
+
+    it('accepts_real_local_day_length_not_assumed_24h', 0, () => {
+      // 2B 将传入夏令时切换日的真实本地日边界；这里用一个 23 小时的本地日
+      // （纽约 2026-03-08，本地 00:00 = 05:00Z，DST 开始后当日只有 23 小时）验证入口可用，
+      // 且所有窗口都被裁切在 [dayStart, dayEnd) 内。
+      const dayStart: number = Date.UTC(2026, 2, 8, 5, 0, 0);
+      const dayEnd: number = dayStart + 23 * 3600000.0;
+      const lat = 40.7128;
+      const lon = -74.006;
+      const w: LightWindow = SolarCalc.lightWindows(dayStart, lat, lon, LightThresholds.defaults(), dayEnd);
+      const ev = SolarCalc.events(dayStart, lat, lon, dayEnd);
+      // 太阳事件必须落在该 23 小时区间内
+      expect(ev.sunriseUtc >= dayStart).assertTrue();
+      expect(ev.sunsetUtc <= dayEnd).assertTrue();
+      // 黄金窗口存在且被裁切在区间内
+      expect(w.goldenMorningStartUtc >= dayStart).assertTrue();
+      expect(w.goldenMorningStartUtc < w.goldenMorningEndUtc).assertTrue();
+      expect(w.goldenEveningEndUtc <= dayEnd).assertTrue();
+      // 蓝调窗口同样不得越界
+      if (w.blueMorningStartUtc >= 0) {
+        expect(w.blueMorningStartUtc >= dayStart).assertTrue();
+        expect(w.blueMorningEndUtc <= dayEnd).assertTrue();
+      }
     });
   });
 }

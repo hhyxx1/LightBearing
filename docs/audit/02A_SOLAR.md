@@ -166,3 +166,92 @@ entry/build/default/outputs/default/entry-default-signed.hap   2,055,083 bytes
 2. 日出阈值固定为几何高度 −0.833°（上边缘 + 标准折射），未支持海拔俯角修正与自定义折射。
 3. `thresholdState()` 在 \|lat\| 接近 90° 时 `cos(lat) → 0`，浮点误差会放大；极点本身未纳入测试。
 4. 测试容差取 ±3 分钟（外部参考声明 ±30 s，本算法复算残差约 30 s 内）。
+
+---
+
+# 补充修复（复审后追加）：高纬度蓝调窗口误判
+
+> 复审指出的建模错误成立。上一版把「蓝调需要 −6° 与 −4° 都发生穿越」当成了**必要条件**，
+> 这是错的：蓝调带是 `[-6°, -4°)`，只要太阳落在带内就存在蓝调，并不要求两端都穿越。
+
+## S1. 反例
+
+| 反例 | 坐标/日期 | 关键数值 | 上一版行为 | 正确行为 |
+|---|---|---|---|---|
+| A | 72°N, 18.9553°E, 2026-12-21 | 正午高度 ≈ −5.44°，穿越 −6° 但到不了 −4° | `goldenLower` 未穿越 → 整组蓝调返回 −1 | 正午前后存在蓝调，窗口由 −6° 两次穿越界定 |
+| B | 61.5°N, 18.9553°E, 2026-06-21 | 午夜最低 ≈ −5.06°，不低于 −6° 但会落到 −4° 以下 | `blueLower` 未穿越 → 整组蓝调返回 −1 | 午夜前后存在蓝调，窗口贴着当地日界 |
+
+反例 B 还暴露了一个更严重的问题：上一版新增的测试 `no_blue_window_when_sun_never_below_minus6`
+把这个错误行为写成了预期结果。**原断言错在前提**：它把「太阳不穿越 −6°」等同于「太阳不进入 [−6,−4) 带」，
+而实际上不穿越 −6° 恰恰意味着太阳始终高于 −6°，只要它还会落到 −4° 以下，就必然在带内停留一段时间。
+该用例已改名为 `blue_window_exists_near_midnight_when_sun_stays_above_minus6`，断言改为「蓝调必须存在」。
+
+## S2. 修正后的建模
+
+把「光线窗口」当作高度带求解：给定本地日区间，求 `{t | lower ≤ alt(t) < upper}`，
+按太阳正午切成「晨/夕」两段。新增私有 `bandWindows()`，按两个边界的状态组合决定结果：
+
+| 下界状态 | 上界状态 | 结果 |
+|---|---|---|
+| 有穿越 | 有穿越 | 常规两段：`[下界上升, 上界上升)`、`[上界下降, 下界下降)` |
+| 有穿越 | 全天低于（到不了上界） | 上界不约束，两段在正午相接（如反例 A） |
+| 全天高于 | 有穿越 | 带贴着零点，两段由日界裁切（如反例 B） |
+| 全天高于 | 全天低于 | 太阳全天在带内 → 整日属于该带（几何上罕见，公式自洽） |
+| 全天低于（到不了下界） | 任意 | 带不存在 |
+| 任意 | 全天高于（始终高于上界） | 带不存在 |
+
+统一约束：端点裁切到 `[dayStart, dayEnd)`；`start < end` 不成立时该段判为不存在（不输出颠倒窗口）。
+黄金与蓝调用同一套逻辑，因此黄金也没有残留的边界遗漏（75°N 夏至两者皆无、特罗姆瑟冬至两者皆有，均有用例）。
+
+## S3. 为 2B 预留真实本地日边界
+
+`events()` 与 `lightWindows()` 增加可选参数 `dayEndLocalUtc`（默认 −1 = 按 24 小时），
+内部不再写死 `+86400000`：日长取 `dayEnd − dayStart`，正午夹取与窗口裁切都使用该区间。
+现有 4 处 `events()`、4 处 `lightWindows()` 调用点**不需要改**，2B 接入 DST 真实边界时只需多传一个参数。
+
+新增用例 `accepts_real_local_day_length_not_assumed_24h`：用纽约 2026-03-08（本地日 23 小时）
+验证事件与窗口都被裁切在该区间内。
+
+## S4. 表示能力说明（兼容性最小）
+
+`LightWindow` 仍是四字段（晨起/晨止/夕起/夕止），足以表达本日的至多两段窗口：
+
+- 连续带（只有下界穿越）在太阳正午处切成相邻两段，视觉上无缝；
+- 跨当地午夜的带（只有上界穿越）按日界裁切，跨日部分不重复计入本日；
+- 未新增字段、未改数据库、未改 UI 与 Bundle Name。
+
+## S5. 修复前后结果
+
+```text
+# 修复前（先写失败测试）
+Tests run: 32, Failure: 2, Error: 0, Pass: 30
+失败：blue_window_exists_near_midnight_when_sun_stays_above_minus6
+      blue_window_exists_in_polar_night_when_minus4_never_reached
+
+# 修复后
+> hvigor BUILD SUCCESSFUL in 8 s 448 ms
+Tests run: 33, Failure: 0, Error: 0, Pass: 33, Ignore: 0
+
+# 外部参考对照
+node tools/solar-check/check.mjs → 最大误差 27.4s，失败 0，不变量 9/9
+
+# 构建
+> hvigor BUILD SUCCESSFUL in 13 s 791 ms
+entry-default-signed.hap  2,045,833 bytes
+```
+
+新增/修改的用例：
+
+| 用例 | 验证点 |
+|---|---|
+| `blue_window_exists_near_midnight_when_sun_stays_above_minus6` | 反例 B：蓝调存在、贴日界、代表时刻在带内、升过 −4° 后在带外 |
+| `blue_window_exists_in_polar_night_when_minus4_never_reached` | 反例 A：蓝调存在而黄金不存在；正午在带内、午夜在带外 |
+| `shanghai_normal_day_windows_ordered_and_bounded`（扩充） | 黄金/蓝调中点均在各自带内；黄金晨窗开始前 5 min 低于 −4°、结束后 5 min 不低于 +6° |
+| `accepts_real_local_day_length_not_assumed_24h` | 23 小时本地日：事件与窗口都被裁切在 `[dayStart, dayEnd)` |
+
+## S6. 剩余限制
+
+1. `bandWindows()` 以「太阳高度关于正午对称」为前提（基于赤纬/均时差在一天内近似不变）；极区跨日期的快速变赤纬情形仍属近似。
+2. 本地日边界仍由调用方提供，2B 之前默认 24 小时；2A 只保证接口可用与被裁切。
+3. 连续带在正午切分属于表示法约定，不代表物理上存在两段。
+

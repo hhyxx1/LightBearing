@@ -226,13 +226,16 @@ export class SolarCalc {
   }
 
   /**
-   * 计算某 UTC 日的事件。
-   * @param dayStartLocalUtc 目标本地日 00:00 对应的 UTC 毫秒时间戳
-   * @param latDeg 纬度
-   * @param lonDeg 经度（东经为正）
+   * 计算某日事件。
+   * @param dayStartLocalUtc 目标本地日 00:00 对应的 UTC 时刻
+   * @param dayEndLocalUtc 目标本地日结束（次日 00:00 对应的 UTC 时刻）；-1 表示按 24 小时处理。
+   *        2B 会传入夏令时切换日的真实边界（当日可能不是 24 小时）。
    */
-  static events(dayStartLocalUtc: number, latDeg: number, lonDeg: number): SolarEvents {
+  static events(dayStartLocalUtc: number, latDeg: number, lonDeg: number,
+    dayEndLocalUtc: number = -1): SolarEvents {
     const e = new SolarEvents();
+    const dayEnd = dayEndLocalUtc > dayStartLocalUtc ? dayEndLocalUtc : dayStartLocalUtc + 86400000.0;
+    const dayLength = dayEnd - dayStartLocalUtc;
     const anchor = SolarCalc.anchorOf(dayStartLocalUtc);
     const utcMidnight = anchor[0];
     const decl = anchor[1];
@@ -242,9 +245,9 @@ export class SolarCalc {
     let noon = utcMidnight + noonMinutes * 60000.0;
     // 保证落在目标本地日区间内（跨日期线与极端经度）
     if (noon < dayStartLocalUtc) {
-      noon += 86400000.0;
-    } else if (noon >= dayStartLocalUtc + 86400000.0) {
-      noon -= 86400000.0;
+      noon += dayLength;
+    } else if (noon >= dayEnd) {
+      noon -= dayLength;
     }
     e.solarNoonUtc = noon;
     e.noonAltitudeDeg = 90.0 - Math.abs(latDeg - decl);
@@ -343,60 +346,89 @@ export class SolarCalc {
     }
   }
 
-  /** 计算某日黄金/蓝调时间窗（UTC 毫秒）；dayStartLocalUtc 为本地日 00:00 的 UTC 时刻 */
-  static lightWindows(dayStartLocalUtc: number, latDeg: number, lonDeg: number, th: LightThresholds): LightWindow {
+  /**
+   * 计算某日黄金/蓝调时间窗（UTC 毫秒）。
+   *
+   * @param dayStartLocalUtc 目标本地日 00:00 对应的 UTC 时刻
+   * @param dayEndLocalUtc 目标本地日结束（次日 00:00 对应 UTC）；-1 表示按 24 小时处理，
+   *        2B 会传入夏令时切换日的真实边界。
+   *
+   * 窗口按「太阳高度带」求解，而不是要求上下边界都发生穿越：
+   * 只要太阳在该日任何时刻落入 [下界, 上界)，就必须产出对应窗口。
+   */
+  static lightWindows(dayStartLocalUtc: number, latDeg: number, lonDeg: number,
+    th: LightThresholds, dayEndLocalUtc: number = -1): LightWindow {
     const w = new LightWindow();
+    const dayEnd = dayEndLocalUtc > dayStartLocalUtc ? dayEndLocalUtc : dayStartLocalUtc + 86400000.0;
+    const dayLength = dayEnd - dayStartLocalUtc;
     const anchor = SolarCalc.anchorOf(dayStartLocalUtc);
     const utcMidnight = anchor[0];
     const decl = anchor[1];
     const eotMin = anchor[2];
     let noonUtc = utcMidnight + (720.0 - 4.0 * lonDeg - eotMin) * 60000.0;
     if (noonUtc < dayStartLocalUtc) {
-      noonUtc += 86400000.0;
-    } else if (noonUtc >= dayStartLocalUtc + 86400000.0) {
-      noonUtc -= 86400000.0;
+      noonUtc += dayLength;
+    } else if (noonUtc >= dayEnd) {
+      noonUtc -= dayLength;
     }
 
-    const dayEnd = dayStartLocalUtc + 86400000.0;
-    const upperState = SolarCalc.thresholdState(latDeg, decl, th.goldenUpperDeg);
-    const lowerState = SolarCalc.thresholdState(latDeg, decl, th.goldenLowerDeg);
-    const blueState = SolarCalc.thresholdState(latDeg, decl, th.blueLowerDeg);
+    // 蓝调带 [-6, goldenLower)，黄金带 [goldenLower, goldenUpper)
+    const golden: number[] = SolarCalc.bandWindows(noonUtc, dayStartLocalUtc, dayEnd, latDeg, decl,
+      th.goldenLowerDeg, th.goldenUpperDeg);
+    w.goldenMorningStartUtc = golden[0];
+    w.goldenMorningEndUtc = golden[1];
+    w.goldenEveningStartUtc = golden[2];
+    w.goldenEveningEndUtc = golden[3];
 
-    // 黄金时段：太阳高度落在 [goldenLower, goldenUpper]。
-    // 只有确实存在穿越的阈值才能用来算端点；不可达阈值按「全天高于/低于」退化，
-    // 不允许用无效时角（-1）去推算窗口。
-    if (upperState !== ThresholdState.ALWAYS_ABOVE && lowerState !== ThresholdState.ALWAYS_BELOW) {
-      const hUpper = upperState === ThresholdState.CROSSING
-        ? SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenUpperDeg) : -1.0;
-      const hLower = lowerState === ThresholdState.CROSSING
-        ? SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenLowerDeg) : -1.0;
-      // 晨间：起点取较低阈值（有穿越用它，全天高于则从当日零点起）
-      const morningStart = lowerState === ThresholdState.CROSSING ? noonUtc - hLower * 240000.0 : dayStartLocalUtc;
-      // 晨间终点：+6° 有穿越则取穿越时刻；太阳全天到不了 +6°，时段延续到正午
-      const morningEnd = upperState === ThresholdState.CROSSING ? noonUtc - hUpper * 240000.0 : noonUtc;
-      const eveningStart = upperState === ThresholdState.CROSSING ? noonUtc + hUpper * 240000.0 : noonUtc;
-      const eveningEnd = lowerState === ThresholdState.CROSSING ? noonUtc + hLower * 240000.0 : dayEnd;
-      if (morningStart < morningEnd) {
-        w.goldenMorningStartUtc = morningStart;
-        w.goldenMorningEndUtc = morningEnd;
-      }
-      if (eveningStart < eveningEnd) {
-        w.goldenEveningStartUtc = eveningStart;
-        w.goldenEveningEndUtc = eveningEnd;
-      }
-    }
-
-    // 蓝调时段：必须两端（-6° 与 goldenLower）都存在穿越才形成区间；
-    // 太阳全天高于 -6°（极昼）或整个白天都低于 -6°（深极夜）时不存在蓝调。
-    if (blueState === ThresholdState.CROSSING && lowerState === ThresholdState.CROSSING) {
-      const hBlue = SolarCalc.hourAngleForAltitude(latDeg, decl, th.blueLowerDeg);
-      const hLower = SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenLowerDeg);
-      w.blueMorningStartUtc = noonUtc - hBlue * 240000.0;
-      w.blueMorningEndUtc = noonUtc - hLower * 240000.0;
-      w.blueEveningStartUtc = noonUtc + hLower * 240000.0;
-      w.blueEveningEndUtc = noonUtc + hBlue * 240000.0;
-    }
+    const blue: number[] = SolarCalc.bandWindows(noonUtc, dayStartLocalUtc, dayEnd, latDeg, decl,
+      th.blueLowerDeg, th.goldenLowerDeg);
+    w.blueMorningStartUtc = blue[0];
+    w.blueMorningEndUtc = blue[1];
+    w.blueEveningStartUtc = blue[2];
+    w.blueEveningEndUtc = blue[3];
     return w;
+  }
+
+  /**
+   * 求太阳几何高度落在 [lowerDeg, upperDeg) 内的窗口，按太阳正午切成「晨/夕」两段。
+   *
+   * 返回 [晨起, 晨止, 夕起, 夕止]（UTC 毫秒，-1 表示该段不存在）。覆盖全部状态组合：
+   * 1) 两个边界都穿越：常规两段；
+   * 2) 只有下界穿越、上界全天不可达：上界不构成约束，两段在正午相接；
+   * 3) 只有上界穿越、下界全天高于：带贴着零点，由日界裁切（跨午夜部分不重复计入）；
+   * 4) 两个边界都不穿越但太阳全天在带内：整日属于该带；
+   * 5) 太阳全天高于上界 或 全天低于下界：该带不存在。
+   * 结果一律裁切到 [dayStartUtc, dayEndUtc)；起止颠倒时该段判为不存在。
+   */
+  private static bandWindows(noonUtc: number, dayStartUtc: number, dayEndUtc: number,
+    latDeg: number, declDeg: number, lowerDeg: number, upperDeg: number): number[] {
+    const lowerState = SolarCalc.thresholdState(latDeg, declDeg, lowerDeg);
+    const upperState = SolarCalc.thresholdState(latDeg, declDeg, upperDeg);
+    if (lowerState === ThresholdState.ALWAYS_BELOW || upperState === ThresholdState.ALWAYS_ABOVE) {
+      return [-1.0, -1.0, -1.0, -1.0];
+    }
+    const hLower = lowerState === ThresholdState.CROSSING
+      ? SolarCalc.hourAngleForAltitude(latDeg, declDeg, lowerDeg) : -1.0;
+    const hUpper = upperState === ThresholdState.CROSSING
+      ? SolarCalc.hourAngleForAltitude(latDeg, declDeg, upperDeg) : -1.0;
+    let morningStart = lowerState === ThresholdState.CROSSING ? noonUtc - hLower * 240000.0 : dayStartUtc;
+    let morningEnd = upperState === ThresholdState.CROSSING ? noonUtc - hUpper * 240000.0 : noonUtc;
+    let eveningStart = upperState === ThresholdState.CROSSING ? noonUtc + hUpper * 240000.0 : noonUtc;
+    let eveningEnd = lowerState === ThresholdState.CROSSING ? noonUtc + hLower * 240000.0 : dayEndUtc;
+    morningStart = Math.max(dayStartUtc, morningStart);
+    morningEnd = Math.min(dayEndUtc, morningEnd);
+    eveningStart = Math.max(dayStartUtc, eveningStart);
+    eveningEnd = Math.min(dayEndUtc, eveningEnd);
+    const out: number[] = [-1.0, -1.0, -1.0, -1.0];
+    if (morningStart < morningEnd) {
+      out[0] = morningStart;
+      out[1] = morningEnd;
+    }
+    if (eveningStart < eveningEnd) {
+      out[2] = eveningStart;
+      out[3] = eveningEnd;
+    }
+    return out;
   }
 
   /** 方位角 → 八向中文名 */
