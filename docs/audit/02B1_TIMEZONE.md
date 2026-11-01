@@ -290,3 +290,116 @@ TestFinished-ResultCode: -3
 2. 1970 年前的跳变（`getMilliseconds() <= 0`）语义未实测；当前实现不依赖跳变表，但历史边界仍属未验证。
 3. 逐分钟扫描整日的最坏代价 1440 次解析，日历页跨大量「00:00 落在缺口」的日期时需要缓存，属 2B-2 评估项。
 4. `UNAVAILABLE` 目前只在 `resolveLocal` / 内部使用；页面尚未展示该状态（2B-2 迁移时补 UI 提示）。
+
+---
+
+# 最终边界修复（复审后追加，第二次）
+
+复审指出的两个问题都实际存在，已用「先写失败测试 → 再改实现」的方式处理。
+
+## F1. 负 UTC 时间戳不再与哨兵值混用
+
+**问题**：`firstExistingInstant()` 用 `-1`（不存在）/`-2`（数据不可用）作哨兵，返回实际时间戳。
+1970 年之前的合法 UTC 时间戳是负数，`dayBounds()` 里 `start < 0`、`end < 0`、`while (end < 0)`
+会把 1969 年的正常日期判成 SKIPPED，或让终点搜索反复循环后报 INVALID。
+
+**修复**（根治，不是把 `< 0` 换成 `!== -1 && !== -2`）：
+
+```ts
+enum DayStartStatus { FOUND, SKIPPED, UNAVAILABLE }
+class DayStartResult { status: DayStartStatus; utcMs: number }   // utcMs 仅在 FOUND 时有效
+
+static firstExistingInstantOf(probe, y, m, d): DayStartResult
+```
+
+`dayBounds()` 的起点判定、终点搜索循环全部改成**显式状态驱动**（`status === FOUND` 才取时间戳，
+`SKIPPED` 才继续找下一天，`UNAVAILABLE` 立即 INVALID）。`LocalDayBounds` 的公共字段含义未变，
+只是 `valid` 的判定不再依赖时间戳正负。
+
+**失败测试（修复前 4 条全红）**：
+
+```text
+Tests run: 62, Failure: 4, Error: 0, Pass: 58
+失败：pre_epoch_dates_are_valid
+      pre_epoch_skipped_day_still_skipped
+      partial_candidate_failure_must_not_be_unique
+      non_finite_offset_is_unavailable
+```
+
+| 用例 | 期望 | 修复前 | 修复后 |
+|---|---|---|---|
+| `pre_epoch_dates_are_valid` | 1969-12-31：`[-86400000, 0)`、24h、NORMAL；1969-12-30：`[-172800000, -86400000)`；1970-01-01：`[0, 86400000)` | SKIPPED（起点为负被当失败） | ✅ |
+| `pre_epoch_skipped_day_still_skipped` | 1969-12-30 被整日跳过 → SKIPPED；其前一天仍有效且时间戳为负 | 前一天被判 SKIPPED | ✅ |
+
+## F2. 候选集合不完整时不得报 UNIQUE / OVERLAP
+
+**问题**：`probeFailure` 只在候选数量为 0 时参与判断。若纽约式回拨的两个候选中，
+一个验证成功、另一个因偏移查询失败（NaN/Infinity），仍会返回 `UNIQUE`，把真实存在的时间歧义藏掉。
+
+**修复**：采集或校验阶段只要出现一次 `!Number.isFinite(offset)`（涵盖 NaN / Infinity / -Infinity），
+就在排序后**直接返回 `UNAVAILABLE`**，不再看候选数量——不能保证完整就不下结论。
+合法偏移 `0`（UTC+00:00）仍正常参与候选；真正的缺口仍返回 `GAP`。
+
+| 用例 | 期望 | 修复前 | 修复后 |
+|---|---|---|---|
+| `partial_candidate_failure_must_not_be_unique`（第一个候选 05:30Z 查询失败） | UNAVAILABLE | UNIQUE（错误地藏掉重叠） | ✅ |
+| 同上（第二个候选 06:30Z 查询失败） | UNAVAILABLE | UNIQUE | ✅ |
+| `non_finite_offset_is_unavailable`（Infinity / NaN 全失效） | UNAVAILABLE | UNIQUE / 部分通过 | ✅ |
+| `zero_offset_is_valid_not_failure` | UNIQUE | UNIQUE | ✅（保持） |
+| `real_gap_and_overlap_still_reported` | GAP / OVERLAP | 同 | ✅（保持） |
+| `compat_fromLocal_*` 五条 | 缺口回退 / 不猜 | 同 | ✅（保持） |
+
+故障探针只在**候选 UTC 时刻**返回 NaN/Infinity（`CandidateFaultProbe` / `InfiniteOffsetProbe`），
+采样点（`naive±36h`、`naive`）与跳变前后偏移都正常，因此确定命中「候选校验」分支，
+不是靠「候选偏移没被枚举」碰巧通过。
+
+## F3. 日期有效性与其他模块的负时间戳哨兵
+
+- `LocalTimeResolver.isValidDate()` 允许 1900–2200，未改（本轮不动范围）。
+- **已修**：`TimeUtil.formatTime()` 原用 `utcMs < 0` 判无效，1970 年前会错误显示 `--:--`，改为 `!Number.isFinite(utcMs)`。
+- **记录待后续阶段处理（未擅自改动）**：
+  | 位置 | 现状 | 影响 |
+  |---|---|---|
+  | `services/SolarCalc.ets:40-48, 87-89` | 事件/窗口字段用 `-1` 表示「无事件」 | 1969 年及更早日期的事件时间是负数，与哨兵冲突 |
+  | `pages/HomePage.ets:108,109,110,120,122,124,126`（7 处） | `ev.xxxUtc < 0 ? '无'` | 同上，会显示「无」 |
+  | `pages/CalendarPage.ets:112,113,115,117`（4 处） | 同上 | 同上 |
+  | `pages/PlaceDetailPage.ets:50,51,53`（3 处） | 同上 | 同上 |
+  | `pages/SunPathPage.ets:87,88`（2 处） | 同上 | 同上 |
+
+  这些属于 2A/2B-2 的接口语义改造（把 -1 哨兵换成状态枚举），本轮按要求不扩大改动。
+
+## F4. 本轮实际执行结果
+
+```text
+# 宿主机全部单元测试（保留原 58 条 + 新增 4 条）
+> hvigor BUILD SUCCESSFUL in 8 s 37 ms
+Tests run: 62, Failure: 0, Error: 0, Pass: 62, Ignore: 0
+
+# 应用构建
+> hvigor BUILD SUCCESSFUL in 12 s 427 ms
+entry-default-signed.hap  2,091,457 bytes
+
+# 测试包构建
+> hvigor BUILD SUCCESSFUL in 9 s 633 ms
+两 HAP 安装成功（install bundle successfully ×2）
+
+# 2A 太阳算法未受影响：SolarCalc / SolarEvents 全套用例（19 条）仍在 62 条内全部通过
+```
+
+**真机 IANA 套件：仍然 0 条执行，未验证。** 使用 `-s class TimeZoneReal` 单独运行，
+设备锁屏导致测试 Ability 无法启动：
+
+```text
+Error Code:10106102  The device screen is locked during the application launch, unlock screen failed.
+```
+
+未绕过锁屏、未修改测试。New York / Shanghai / Kathmandu / Lord Howe / Kiritimati / Apia
+以及新增的 `zone_rules_transition_values_are_real` 全部未执行。
+
+## F5. 补充后的遗留
+
+1. **真实 IANA 时区仍未在设备上验证**（连续三轮）：`getMilliseconds()`、`getOffsetBefore/After`、
+   历史规则（Apia 2011）都只有合成时区或文档依据。
+2. SolarCalc 与 4 个页面的 `-1`/`< 0` 哨兵尚未换成语义化状态（见 F3 表格），属 2B-2。
+3. 1900–2200 的年份范围未复核是否覆盖所有历史时区数据。
+4. 逐分钟扫描整日的性能代价（仅 00:00 落在缺口时触发）仍未在日历页实测。

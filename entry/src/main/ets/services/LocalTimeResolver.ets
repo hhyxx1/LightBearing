@@ -39,6 +39,23 @@ export interface ZoneProbe {
   isValid(): boolean;
 }
 
+/** 本地日「第一个存在时刻」的查询状态：与时间戳彻底分离，避免负数哨兵歧义 */
+export enum DayStartStatus {
+  /** 找到真实时刻（utcMs 可能是负数，1970 年之前） */
+  FOUND = 0,
+  /** 该本地日期被整日跳过 */
+  SKIPPED = 1,
+  /** 时区数据不可用，无法判断 */
+  UNAVAILABLE = 2
+}
+
+/** 本地日起点查询结果 */
+export class DayStartResult {
+  status: number = DayStartStatus.SKIPPED;
+  /** 仅当 status === DayStartStatus.FOUND 时有效 */
+  utcMs: number = 0;
+}
+
 /** 本地时间解析状态 */
 export enum LocalResolveStatus {
   /** 唯一对应一个真实 UTC 时刻 */
@@ -194,7 +211,8 @@ export class LocalTimeResolver {
     for (const offset of offsets) {
       const utc = naive - offset;
       const actual = probe.offsetAt(utc);
-      if (Number.isNaN(actual)) {
+      // NaN / Infinity / -Infinity 都算无效偏移数据
+      if (!Number.isFinite(actual)) {
         probeFailure = true;
         continue;
       }
@@ -209,15 +227,16 @@ export class LocalTimeResolver {
     }
     LocalTimeResolver.sortCandidates(r);
 
+    // 只要采集或校验期间出现无效偏移，候选集合就可能不完整：
+    // 此时绝不允许报 UNIQUE / OVERLAP / GAP，一律 UNAVAILABLE。
+    if (probeFailure) {
+      r.status = LocalResolveStatus.UNAVAILABLE;
+      r.reason = '时区数据不可用，无法保证候选集合完整';
+      return r;
+    }
     if (r.candidatesUtc.length === 0) {
-      if (probeFailure) {
-        // 探针故障绝不能报成「时间不存在」
-        r.status = LocalResolveStatus.UNAVAILABLE;
-        r.reason = '时区数据不可用，无法判断该本地时间是否存在';
-      } else {
-        r.status = LocalResolveStatus.GAP;
-        r.reason = '该本地时间处于夏令时前跳的缺口内，不存在';
-      }
+      r.status = LocalResolveStatus.GAP;
+      r.reason = '该本地时间处于夏令时前跳的缺口内，不存在';
     } else if (r.candidatesUtc.length === 1) {
       r.status = LocalResolveStatus.UNIQUE;
       r.reason = '唯一对应';
@@ -253,37 +272,44 @@ export class LocalTimeResolver {
       b.reason = '日期非法';
       return b;
     }
-    const start = LocalTimeResolver.firstExistingInstant(probe, year, month, day);
-    if (start === -2) {
+    const startResult: DayStartResult = LocalTimeResolver.firstExistingInstantOf(probe, year, month, day);
+    if (startResult.status === DayStartStatus.UNAVAILABLE) {
       b.valid = false;
       b.kind = DayKind.INVALID;
       b.reason = '时区数据不可用，无法确定本地日边界';
       return b;
     }
-    if (start < 0) {
+    if (startResult.status === DayStartStatus.SKIPPED) {
       b.valid = false;
       b.kind = DayKind.SKIPPED;
       b.reason = '该本地日期被时区跳变整日跳过';
       return b;
     }
+    const start = startResult.utcMs;
     let ny = year;
     let nm = month;
     let nd = day;
-    let end = -1;
-    for (let i = 0; i < 4 && end < 0; i++) {
+    let end = 0;
+    let endFound = false;
+    // 用显式状态驱动循环：不能用「时间戳 < 0」判断是否找到（1970 年前时间戳就是负数）
+    for (let i = 0; i < 4 && !endFound; i++) {
       const nextDate: number[] = LocalTimeResolver.plusOneDay(ny, nm, nd);
       ny = nextDate[0];
       nm = nextDate[1];
       nd = nextDate[2];
-      end = LocalTimeResolver.firstExistingInstant(probe, ny, nm, nd);
-      if (end === -2) {
+      const endResult: DayStartResult = LocalTimeResolver.firstExistingInstantOf(probe, ny, nm, nd);
+      if (endResult.status === DayStartStatus.UNAVAILABLE) {
         b.valid = false;
         b.kind = DayKind.INVALID;
         b.reason = '时区数据不可用，无法确定本地日结束边界';
         return b;
       }
+      if (endResult.status === DayStartStatus.FOUND) {
+        end = endResult.utcMs;
+        endFound = true;
+      }
     }
-    if (end < 0) {
+    if (!endFound) {
       b.valid = false;
       b.kind = DayKind.INVALID;
       b.reason = '无法确定本地日结束边界';
@@ -313,31 +339,41 @@ export class LocalTimeResolver {
 
   /**
    * 该本地日在真实时间上存在的第一个时刻。
-   * 返回 -1 表示整日不存在；返回 -2 表示时区数据不可用（不能当作跳过）。
+   *
+   * 用 DayStartResult 把「状态」和「时间戳」分开：状态是枚举，时间戳只在 FOUND 时有效，
+   * 因此 1970 年之前的合法负时间戳不会被误判成失败。
    *
    * 00:00 不可用时逐分钟扫描整日——不做抽样快捷判断，
    * 因为存在「整日只在很短一段时间内有效」的极端时区跳变日（见测试 short_valid_window_day）。
    */
-  static firstExistingInstant(probe: ZoneProbe, year: number, month: number, day: number): number {
+  static firstExistingInstantOf(probe: ZoneProbe, year: number, month: number, day: number): DayStartResult {
+    const out = new DayStartResult();
     const direct = LocalTimeResolver.resolve(probe, year, month, day, 0, 0);
     if (direct.status === LocalResolveStatus.UNAVAILABLE) {
-      return -2;
+      out.status = DayStartStatus.UNAVAILABLE;
+      return out;
     }
     if (direct.status === LocalResolveStatus.UNIQUE || direct.status === LocalResolveStatus.OVERLAP) {
-      return direct.candidatesUtc[0];
+      out.status = DayStartStatus.FOUND;
+      out.utcMs = direct.candidatesUtc[0];
+      return out;
     }
     for (let minutes = 1; minutes < 1440; minutes++) {
       const h = Math.floor(minutes / 60);
       const m = minutes % 60;
       const r = LocalTimeResolver.resolve(probe, year, month, day, h, m);
       if (r.status === LocalResolveStatus.UNAVAILABLE) {
-        return -2;
+        out.status = DayStartStatus.UNAVAILABLE;
+        return out;
       }
       if (r.status === LocalResolveStatus.UNIQUE || r.status === LocalResolveStatus.OVERLAP) {
-        return r.candidatesUtc[0];
+        out.status = DayStartStatus.FOUND;
+        out.utcMs = r.candidatesUtc[0];
+        return out;
       }
     }
-    return -1;
+    out.status = DayStartStatus.SKIPPED;
+    return out;
   }
 
   /** 公历减一天 */

@@ -198,7 +198,8 @@ export class TimeUtil {
 
   /** HH:mm */
   static formatTime(tzId: string, utcMs: number): string {
-    if (utcMs < 0) {
+    // 1970 年之前的合法时间戳是负数，不能用 < 0 判断无效
+    if (!Number.isFinite(utcMs)) {
       return '--:--';
     }
     const p = TimeUtil.toLocal(tzId, utcMs);

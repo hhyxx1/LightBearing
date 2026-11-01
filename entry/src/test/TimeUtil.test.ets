@@ -173,6 +173,66 @@ class GapWithoutMatchingTransitionProbe implements ZoneProbe {
   }
 }
 
+/** 只在指定 UTC 时刻返回 NaN 的探针（精确命中候选校验分支） */
+class CandidateFaultProbe implements ZoneProbe {
+  private inner: ZoneProbe;
+  private faultAt: number;
+
+  constructor(inner: ZoneProbe, faultAt: number) {
+    this.inner = inner;
+    this.faultAt = faultAt;
+  }
+
+  isValid(): boolean {
+    return true;
+  }
+
+  offsetAt(utcMs: number): number {
+    if (utcMs === this.faultAt) {
+      return NaN;
+    }
+    return this.inner.offsetAt(utcMs);
+  }
+
+  transitionAfter(utcMs: number): ZoneTransitionInfo | undefined {
+    return this.inner.transitionAfter(utcMs);
+  }
+}
+
+/** 只在指定 UTC 时刻返回 Infinity 的探针 */
+class InfiniteOffsetProbe implements ZoneProbe {
+  private inner: ZoneProbe;
+  private faultAt: number;
+
+  constructor(inner: ZoneProbe, faultAt: number) {
+    this.inner = inner;
+    this.faultAt = faultAt;
+  }
+
+  isValid(): boolean {
+    return true;
+  }
+
+  offsetAt(utcMs: number): number {
+    if (utcMs === this.faultAt) {
+      return Infinity;
+    }
+    return this.inner.offsetAt(utcMs);
+  }
+
+  transitionAfter(utcMs: number): ZoneTransitionInfo | undefined {
+    return this.inner.transitionAfter(utcMs);
+  }
+}
+
+/** 1969 年整日跳过的时区（跳变发生在 Unix epoch 之前） */
+function preEpochSkippedZone(): ZoneProbe {
+  const transitions: ZoneTransitionInfo[] = [
+    ZoneTransitionInfo.of(Date.UTC(1969, 11, 30, 10, 0, 0), -10 * HOUR, 14 * HOUR)
+  ];
+  return new SyntheticZone(-10 * HOUR, transitions);
+}
+
 /** 只有回拨跳变（offsetAfter < offsetBefore）的时区：不可能造成缺口 */
 function onlyFallBackZone(): ZoneProbe {
   const transitions: ZoneTransitionInfo[] = [
@@ -451,6 +511,73 @@ export default function timeUtilTest() {
       // 普通时区 +1 天
       expect(LocalTimeResolver.addLocalDayStart(new SyntheticZone(8 * HOUR, []), 2026, 10, 30, 1))
         .assertEqual(Date.UTC(2026, 9, 30, 16, 0, 0));
+    });
+
+    it('pre_epoch_dates_are_valid', 0, () => {
+      // Unix epoch 之前的合法 UTC 时间戳是负数，不能当作「日期不存在」
+      const utcZone = new SyntheticZone(0, []);
+
+      const dec31 = LocalTimeResolver.dayBounds(utcZone, 1969, 12, 31);
+      expect(dec31.valid).assertTrue();
+      expect(dec31.kind).assertEqual(DayKind.NORMAL);
+      expect(dec31.startUtc).assertEqual(Date.UTC(1969, 11, 31, 0, 0, 0)); // -86400000
+      expect(dec31.endUtc).assertEqual(Date.UTC(1970, 0, 1, 0, 0, 0)); // 0
+      expect(dec31.durationMs).assertEqual(24 * HOUR);
+      expect(dec31.startUtc < 0).assertTrue();
+      expect(dec31.endUtc).assertEqual(0);
+
+      const dec30 = LocalTimeResolver.dayBounds(utcZone, 1969, 12, 30);
+      expect(dec30.valid).assertTrue();
+      expect(dec30.kind).assertEqual(DayKind.NORMAL);
+      expect(dec30.startUtc).assertEqual(Date.UTC(1969, 11, 30, 0, 0, 0)); // -172800000
+      expect(dec30.endUtc).assertEqual(Date.UTC(1969, 11, 31, 0, 0, 0)); // -86400000
+      expect(dec30.startUtc < 0 && dec30.endUtc < 0).assertTrue();
+
+      const epoch = LocalTimeResolver.dayBounds(utcZone, 1970, 1, 1);
+      expect(epoch.valid).assertTrue();
+      expect(epoch.kind).assertEqual(DayKind.NORMAL);
+      expect(epoch.startUtc).assertEqual(0);
+      expect(epoch.endUtc).assertEqual(24 * HOUR);
+    });
+
+    it('pre_epoch_skipped_day_still_skipped', 0, () => {
+      // 1969-12-30 被整日跳过（跳变发生在 epoch 之前），仍必须是 SKIPPED 而不是「有效负时间戳」
+      const skipped = LocalTimeResolver.dayBounds(preEpochSkippedZone(), 1969, 12, 30);
+      expect(skipped.valid).assertFalse();
+      expect(skipped.kind).assertEqual(DayKind.SKIPPED);
+      expect(skipped.startUtc).assertEqual(-1);
+      // 前一天仍然有效，且时间戳为负
+      const before = LocalTimeResolver.dayBounds(preEpochSkippedZone(), 1969, 12, 29);
+      expect(before.valid).assertTrue();
+      expect(before.startUtc < 0).assertTrue();
+    });
+
+    it('partial_candidate_failure_must_not_be_unique', 0, () => {
+      // 纽约式回拨：本地 01:30 有两个候选（05:30Z 用 −4h，06:30Z 用 −5h）
+      const control = LocalTimeResolver.resolve(newYorkLike(), 2026, 11, 1, 1, 30);
+      expect(control.status).assertEqual(LocalResolveStatus.OVERLAP);
+      expect(control.candidatesUtc.length).assertEqual(2);
+
+      // 第一个候选（05:30Z）校验失败 → 候选集可能不完整，必须 UNAVAILABLE，不能降级成 UNIQUE
+      const firstFault = LocalTimeResolver.resolve(
+        new CandidateFaultProbe(newYorkLike(), Date.UTC(2026, 10, 1, 5, 30, 0)), 2026, 11, 1, 1, 30);
+      expect(firstFault.status).assertEqual(LocalResolveStatus.UNAVAILABLE);
+
+      // 第二个候选（06:30Z）校验失败 → 同样 UNAVAILABLE
+      const secondFault = LocalTimeResolver.resolve(
+        new CandidateFaultProbe(newYorkLike(), Date.UTC(2026, 10, 1, 6, 30, 0)), 2026, 11, 1, 1, 30);
+      expect(secondFault.status).assertEqual(LocalResolveStatus.UNAVAILABLE);
+    });
+
+    it('non_finite_offset_is_unavailable', 0, () => {
+      // Infinity / -Infinity 与 NaN 一样属于无效偏移数据
+      const infProbe = new InfiniteOffsetProbe(newYorkLike(), Date.UTC(2026, 10, 1, 5, 30, 0));
+      const r = LocalTimeResolver.resolve(infProbe, 2026, 11, 1, 1, 30);
+      expect(r.status).assertEqual(LocalResolveStatus.UNAVAILABLE);
+
+      const nanProbe = new NaNProbe();
+      expect(LocalTimeResolver.resolve(nanProbe, 2026, 11, 1, 1, 30).status)
+        .assertEqual(LocalResolveStatus.UNAVAILABLE);
     });
 
     it('year_boundary_and_month_end', 0, () => {
