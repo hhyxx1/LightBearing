@@ -4,6 +4,7 @@ import { FontSize, Radius, Spacing, MIN_TOUCH, ThemeColors } from '../common/The
 import { Place } from '../model/Models';
 import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { DayKind, LocalResolveStatus } from '../services/LocalTimeResolver';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 import { CompareChart, CompareSeries } from '../components/Charts';
@@ -115,12 +116,35 @@ export struct ComparePage {
       for (const dateLabel of this.dates) {
         const parts: string[] = dateLabel.split('-');
         if (parts.length < 3) {
+          cells.push('日期无效');
           continue;
         }
-        const utc = TimeUtil.fromLocal(place.tzId, Number.parseInt(parts[0]), Number.parseInt(parts[1]),
-          Number.parseInt(parts[2]), hours[i], 0);
+        const y = Number.parseInt(parts[0]);
+        const m = Number.parseInt(parts[1]);
+        const d = Number.parseInt(parts[2]);
+        const bounds = TimeUtil.localDayBounds(place.tzId, y, m, d);
+        if (!bounds.valid) {
+          cells.push(bounds.kind === DayKind.SKIPPED ? '该当地日期不存在' : '时区数据不可用');
+          continue;
+        }
+        // 用解析状态代替「直接 fromLocal 再 position」：缺口/重复/不可用都要给出明确结果
+        const resolved = TimeUtil.resolveLocal(place.tzId, y, m, d, hours[i], 0);
+        if (resolved.status === LocalResolveStatus.GAP) {
+          cells.push('该时刻不存在（夏令时跳变）');
+          continue;
+        }
+        if (resolved.status !== LocalResolveStatus.UNIQUE && resolved.status !== LocalResolveStatus.OVERLAP) {
+          cells.push('时间不可用');
+          continue;
+        }
+        const utc = resolved.candidatesUtc[0];
+        if (!Number.isFinite(utc)) {
+          cells.push('时间不可用');
+          continue;
+        }
         const pos: SunPosition = SolarCalc.position(utc, place.latWgs84, place.lonWgs84);
-        cells.push(`${pos.azimuthDeg.toFixed(0)}° / ${pos.altitudeDeg.toFixed(0)}°`);
+        const base = `${pos.azimuthDeg.toFixed(0)}° / ${pos.altitudeDeg.toFixed(0)}°`;
+        cells.push(resolved.status === LocalResolveStatus.OVERLAP ? `${base}（重复小时取较早）` : base);
       }
       row.cells = cells;
       rows.push(row);
@@ -134,14 +158,20 @@ export struct ComparePage {
       if (parts.length < 3) {
         continue;
       }
+      // 每条曲线使用各自真实本地日区间；无效日期不画假曲线
+      const bounds = TimeUtil.localDayBounds(place.tzId, Number.parseInt(parts[0]),
+        Number.parseInt(parts[1]), Number.parseInt(parts[2]));
+      if (!bounds.valid) {
+        continue;
+      }
       const s = new CompareSeries();
       s.label = this.dates[i];
       s.colorHex = palette[i % palette.length];
       s.lat = place.latWgs84;
       s.lon = place.lonWgs84;
       s.tzId = place.tzId;
-      s.dayStartUtc = TimeUtil.fromLocal(place.tzId, Number.parseInt(parts[0]), Number.parseInt(parts[1]),
-        Number.parseInt(parts[2]), 0, 0);
+      s.dayStartUtc = bounds.startUtc;
+      s.dayEndUtc = bounds.endUtc;
       series.push(s);
     }
     this.series = series;

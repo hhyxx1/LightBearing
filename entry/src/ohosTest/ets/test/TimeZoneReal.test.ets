@@ -2,6 +2,8 @@ import { describe, it, expect } from '@ohos/hypium';
 import { i18n } from '@kit.LocalizationKit';
 import { TimeUtil } from '../../../main/ets/services/TimeUtil';
 import { DayKind, LocalDayBounds, LocalResolveResult, LocalResolveStatus } from '../../../main/ets/services/LocalTimeResolver';
+import { Timeline, TimelineModel } from '../../../main/ets/services/Timeline';
+import { TimelineLabels, TimelineTick } from '../../../main/ets/services/TimelineLabels';
 
 /**
  * 真实 IANA 时区的设备侧测试。
@@ -148,6 +150,39 @@ export default function timeZoneRealTest() {
       expect(lhSpringForward.getOffsetBefore()).assertEqual(10 * HOUR + HALF_HOUR);
       expect(lhSpringForward.getOffsetAfter()).assertEqual(11 * HOUR);
       expect(lhSpringForward.getOffsetAfter() - lhSpringForward.getOffsetBefore()).assertEqual(HALF_HOUR);
+    });
+
+
+    it('timeline_labels_handle_dst_gap_and_overlap', 0, () => {
+      // 春季：横轴是 UTC 连续时间，标签由 UTC→本地转换，缺失的 02:xx 不会作为刻度出现
+      const spring: TimelineModel = Timeline.fromBounds(Date.UTC(2026, 2, 8, 5, 0, 0),
+        Date.UTC(2026, 2, 9, 4, 0, 0));
+      expect(spring.valid).assertTrue();
+      const springTicks: TimelineTick[] = TimelineLabels.ticks(spring, 'America/New_York', 360);
+      expect(springTicks.length > 0).assertTrue();
+      for (const t of springTicks) {
+        expect(t.label.startsWith('02:')).assertFalse();
+        expect(t.ratio >= 0 && t.ratio < 1).assertTrue();
+      }
+      // 钟表本身确实跳过了 02:xx：07:00Z → 03:00，07:59Z → 03:59
+      expect(TimelineLabels.formatLocal(Date.UTC(2026, 2, 8, 7, 0, 0), 'America/New_York')).assertEqual('03:00');
+      expect(TimelineLabels.formatLocal(Date.UTC(2026, 2, 8, 6, 59, 0), 'America/New_York')).assertEqual('01:59');
+
+      // 秋季：两个本地 01:30 来自不同 UTC，标签必须能区分（带偏移后缀）
+      const first = new TimelineTick();
+      first.utcMs = Date.UTC(2026, 10, 1, 5, 30, 0);
+      first.label = TimelineLabels.formatLocal(first.utcMs, 'America/New_York');
+      const second = new TimelineTick();
+      second.utcMs = Date.UTC(2026, 10, 1, 6, 30, 0);
+      second.label = TimelineLabels.formatLocal(second.utcMs, 'America/New_York');
+      expect(first.label).assertEqual('01:30');
+      expect(second.label).assertEqual('01:30');
+      const labelled = TimelineLabels.disambiguate([first, second], 'America/New_York');
+      expect(labelled[0].label !== labelled[1].label).assertTrue();
+
+      // 半小时时区的短偏移
+      expect(TimelineLabels.offsetShort(Date.UTC(2026, 9, 3, 13, 30, 0), 'Australia/Lord_Howe'))
+        .assertEqual('+10.5');
     });
 
     it('start_of_day_and_add_days_follow_real_bounds', 0, () => {

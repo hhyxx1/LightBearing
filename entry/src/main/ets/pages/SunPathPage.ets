@@ -4,6 +4,7 @@ import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, IdGen } from '../model/Models';
 import { SolarCalc, SunPosition, SolarEvents, LightPhase, LightWindow, EventState, WindowState } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { Timeline, TimelineModel } from '../services/Timeline';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, MetricTile, SectionCard, Dialogs } from '../components/Widgets';
 import { SunPathChart, CompassDial } from '../components/Charts';
@@ -160,6 +161,17 @@ export struct SunPathPage {
     if (place === undefined) {
       return;
     }
+    // 保存前再次校验：时刻有限、属于当前真实本地日区间、经纬度合法
+    const tm: TimelineModel = Timeline.fromBounds(this.dayStartUtc, this.dayEndUtc);
+    if (!Number.isFinite(this.selectedUtc) || !tm.valid || tm.ratioOf(this.selectedUtc) < 0) {
+      Dialogs.toast(this.getUIContext(), '当前时刻不属于有效的当地日期区间，未保存计划');
+      return;
+    }
+    if (!Number.isFinite(place.latWgs84) || !Number.isFinite(place.lonWgs84) ||
+      Math.abs(place.latWgs84) > 90 || Math.abs(place.lonWgs84) > 180) {
+      Dialogs.toast(this.getUIContext(), '机位经纬度非法，未保存计划');
+      return;
+    }
     try {
       const pos = SolarCalc.position(this.selectedUtc, place.latWgs84, place.lonWgs84);
       const plan = new ShootPlan();
@@ -293,6 +305,7 @@ export struct SunPathPage {
               lon: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84,
               tzId: this.tzId,
               dayStartUtc: this.dayStartUtc,
+              dayEndUtc: this.dayEndUtc,
               selectedUtc: this.selectedUtc,
               goldenUpper: AppState.settings.goldenUpper,
               goldenLower: AppState.settings.goldenLower,

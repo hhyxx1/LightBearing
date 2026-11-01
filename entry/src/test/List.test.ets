@@ -3,6 +3,7 @@ import solarEventsTest from './SolarEvents.test';
 import timeUtilTest from './TimeUtil.test';
 import reverseSearchTest from './ReverseSearch.test';
 import csvCodecTest from './CsvCodec.test';
+import timelineTest from './Timeline.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -10,4 +11,5 @@ export default function testsuite() {
   timeUtilTest();
   reverseSearchTest();
   csvCodecTest();
+  timelineTest();
 }

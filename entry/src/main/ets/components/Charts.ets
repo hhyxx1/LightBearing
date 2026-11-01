@@ -2,6 +2,8 @@ import { common } from '@kit.AbilityKit';
 import { ThemeColors, FontSize } from '../common/Theme';
 import { SolarCalc, SunPosition, LightThresholds } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { Timeline, TimelineModel } from '../services/Timeline';
+import { TimelineLabels, TimelineTick } from '../services/TimelineLabels';
 
 /** 采样点 */
 class Sample {
@@ -10,19 +12,24 @@ class Sample {
   azimuth: number = 0;
 }
 
-function sampleDay(dayStartUtc: number, lat: number, lon: number, stepMinutes: number): Sample[] {
+/**
+ * 按真实本地日区间采样：[startUtc, endUtc)，步长 10/15 分钟。
+ * 不再使用 dayStart + 86400000 —— 夏令时切换日可能是 23/25/23.5/24.5 小时。
+ */
+function sampleRange(startUtc: number, endUtc: number, lat: number, lon: number, stepMinutes: number): Sample[] {
   const out: Sample[] = [];
-  const stepMs = stepMinutes * 60000;
-  let t = dayStartUtc;
-  const end = dayStartUtc + 86400000;
-  while (t <= end) {
+  const model: TimelineModel = Timeline.fromBounds(startUtc, endUtc);
+  if (!model.valid) {
+    return out;
+  }
+  const times: number[] = Timeline.sampleTimes(model, stepMinutes * 60000);
+  for (const t of times) {
     const pos: SunPosition = SolarCalc.position(t, lat, lon);
     const s = new Sample();
     s.utcMs = t;
     s.altitude = pos.altitudeDeg;
     s.azimuth = pos.azimuthDeg;
     out.push(s);
-    t += stepMs;
   }
   return out;
 }
@@ -37,6 +44,7 @@ export struct SunPathChart {
   @Prop @Watch('onDataChanged') lon: number = 0;
   @Prop @Watch('onDataChanged') tzId: string = 'Asia/Shanghai';
   @Prop @Watch('onDataChanged') dayStartUtc: number = 0;
+  @Prop @Watch('onDataChanged') dayEndUtc: number = 0;
   @Prop @Watch('onDataChanged') selectedUtc: number = 0;
   @Prop goldenUpper: number = 6;
   @Prop goldenLower: number = -4;
@@ -67,8 +75,14 @@ export struct SunPathChart {
     }
   }
 
+  /** 当前真实时间轴（draw 时按 dayStart/dayEnd 重建） */
+  private tm: TimelineModel = new TimelineModel();
+
   private xOf(utcMs: number, width: number): number {
-    const ratio = (utcMs - this.dayStartUtc) / 86400000.0;
+    const ratio = this.tm.ratioOf(utcMs);
+    if (ratio < 0) {
+      return -1;
+    }
     return 8 + ratio * (width - 16);
   }
 
@@ -84,7 +98,15 @@ export struct SunPathChart {
     const w = ctx.width;
     const h = ctx.height;
     ctx.clearRect(0, 0, w, h);
-    if (w <= 0 || h <= 0 || this.dayStartUtc <= 0) {
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+    // 真实区间；不可用时只画空状态，绝不用 24 小时兜底
+    this.tm = Timeline.fromBounds(this.dayStartUtc, this.dayEndUtc);
+    if (!this.tm.valid) {
+      ctx.fillStyle = this.colors.muted;
+      ctx.font = `${FontSize.CAPTION}vp sans-serif`;
+      ctx.fillText('当日时间轴不可用', 12, h / 2);
       return;
     }
 
@@ -109,8 +131,8 @@ export struct SunPathChart {
     ctx.lineTo(w - 8, horizonY);
     ctx.stroke();
 
-    // 采样曲线
-    const samples = sampleDay(this.dayStartUtc, this.lat, this.lon, 10);
+    // 采样曲线（按真实本地日区间）
+    const samples = sampleRange(this.tm.startUtc, this.tm.endUtc, this.lat, this.lon, 10);
     // 地平线以上：强调色
     ctx.strokeStyle = this.colors.accent;
     ctx.lineWidth = 2.2;
@@ -159,10 +181,11 @@ export struct SunPathChart {
     ctx.fillStyle = this.withAlpha(this.colors.primary, 0.16);
     ctx.fillRect(8, bandTop, w - 16, Math.max(2, bandBottom - bandTop));
 
-    // 选中时刻
-    if (this.selectedUtc >= this.dayStartUtc && this.selectedUtc <= this.dayStartUtc + 86400000) {
+    // 选中时刻：必须落在真实区间内才绘制（区间外不画错误标记）
+    const selRatio = this.tm.ratioOf(this.selectedUtc);
+    if (selRatio >= 0) {
       const pos = SolarCalc.position(this.selectedUtc, this.lat, this.lon);
-      const x = this.xOf(this.selectedUtc, w);
+      const x = 8 + selRatio * (w - 16);
       const y = this.yOf(pos.altitudeDeg, h);
       ctx.strokeStyle = this.withAlpha(this.colors.ink, 0.35);
       ctx.lineWidth = 1;
@@ -179,18 +202,15 @@ export struct SunPathChart {
       ctx.stroke();
     }
 
-    // 时间刻度（本地时间 0/6/12/18/24）
+    // 时间刻度：横轴是 UTC 连续时间，标签只做 UTC → 本地 转换。
+    // DST 缺口不会出现不存在的本地时刻；回拨造成的重复小时带偏移后缀区分。
     ctx.fillStyle = this.colors.muted;
     ctx.font = `${FontSize.CAPTION}vp sans-serif`;
-    const marks: number[] = [0, 6, 12, 18, 24];
-    for (const hour of marks) {
-      const t = TimeUtil.fromLocal(this.tzId, TimeUtil.toLocal(this.tzId, this.dayStartUtc).year,
-        TimeUtil.toLocal(this.tzId, this.dayStartUtc).month, TimeUtil.toLocal(this.tzId, this.dayStartUtc).day,
-        hour, 0);
-      const x = this.xOf(t, w);
-      const label = hour === 24 ? '24' : `${hour}`;
-      if (x > 4 && x < w - 14) {
-        ctx.fillText(label, x, h - 6);
+    const ticks: TimelineTick[] = TimelineLabels.ticks(this.tm, this.tzId, w);
+    for (const tick of ticks) {
+      const x = 8 + tick.ratio * (w - 16);
+      if (x > 4 && x < w - 26) {
+        ctx.fillText(tick.label, x, h - 6);
       }
     }
   }
@@ -480,6 +500,8 @@ export class CompareSeries {
   lon: number = 0;
   tzId: string = 'Asia/Shanghai';
   dayStartUtc: number = 0;
+  /** 该日期自身的真实本地日结束时刻；<= dayStartUtc 表示该日期不可用 */
+  dayEndUtc: number = 0;
 }
 
 @Component
@@ -532,14 +554,25 @@ export struct CompareChart {
       ctx.stroke();
     }
 
+    // 横轴语义：各本地日「已过去的真实时间比例」，不同日长不能混用钟点标注
+    let drewAny = false;
     for (const s of this.series) {
-      const samples = sampleDay(s.dayStartUtc, s.lat, s.lon, 15);
+      const model: TimelineModel = Timeline.fromBounds(s.dayStartUtc, s.dayEndUtc);
+      if (!model.valid) {
+        continue;
+      }
+      drewAny = true;
+      const samples = sampleRange(model.startUtc, model.endUtc, s.lat, s.lon, 15);
       ctx.strokeStyle = s.colorHex;
       ctx.lineWidth = 2;
       ctx.beginPath();
       let started = false;
       for (const sample of samples) {
-        const x = xOf((sample.utcMs - s.dayStartUtc) / 86400000.0);
+        const ratio = model.ratioOf(sample.utcMs);
+        if (ratio < 0) {
+          continue;
+        }
+        const x = xOf(ratio);
         const y = yOf(sample.altitude);
         if (sample.altitude >= -0.833) {
           if (!started) {
@@ -557,11 +590,14 @@ export struct CompareChart {
 
     ctx.fillStyle = this.colors.muted;
     ctx.font = `${FontSize.CAPTION}vp sans-serif`;
-    ctx.fillText('0h', 8, h - 6);
-    ctx.fillText('6h', xOf(0.25), h - 6);
-    ctx.fillText('12h', xOf(0.5) - 8, h - 6);
-    ctx.fillText('18h', xOf(0.75) - 8, h - 6);
-    ctx.fillText('24h', w - 26, h - 6);
+    if (!drewAny) {
+      ctx.fillText('没有可用的对照日期', 12, h / 2);
+    }
+    ctx.fillText('0%', 8, h - 6);
+    ctx.fillText('25%', xOf(0.25), h - 6);
+    ctx.fillText('50%', xOf(0.5) - 8, h - 6);
+    ctx.fillText('75%', xOf(0.75) - 8, h - 6);
+    ctx.fillText('100%', w - 34, h - 6);
   }
 
   build() {
