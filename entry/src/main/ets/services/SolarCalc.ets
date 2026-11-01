@@ -28,6 +28,13 @@ export class SunPosition {
   }
 }
 
+/** 阈值穿越状态：区分「有穿越 / 全天高于 / 全天低于」 */
+export enum ThresholdState {
+  CROSSING = 0,
+  ALWAYS_ABOVE = 1,
+  ALWAYS_BELOW = 2
+}
+
 /** 某日太阳事件（全部为 UTC 毫秒；不可用时为 -1） */
 export class SolarEvents {
   solarNoonUtc: number = -1;
@@ -43,6 +50,11 @@ export class SolarEvents {
   polarState: number = 0;
   /** 当日正午太阳高度角 */
   noonAltitudeDeg: number = 0;
+  /** 各组阈值的穿越状态（-1 值的真实原因），见 ThresholdState */
+  sunState: number = ThresholdState.CROSSING;
+  civilState: number = ThresholdState.CROSSING;
+  nauticalState: number = ThresholdState.CROSSING;
+  astronomicalState: number = ThresholdState.CROSSING;
 }
 
 /** 光线阶段枚举 */
@@ -186,6 +198,21 @@ export class SolarCalc {
   }
 
   /**
+   * 判定某高度阈值与当日太阳高度曲线的相对关系。
+   *
+   * 有穿越 → CROSSING；无穿越时用正午高度（当日最大值）判断全天在上还是在下。
+   * 这样「无解」不再只有一种含义，调用方可以区分极昼、极夜与正常日。
+   */
+  static thresholdState(latDeg: number, declDeg: number, altitudeDeg: number): ThresholdState {
+    const h = SolarCalc.hourAngleForAltitude(latDeg, declDeg, altitudeDeg);
+    if (h >= 0) {
+      return ThresholdState.CROSSING;
+    }
+    const noonAltitude = 90.0 - Math.abs(latDeg - declDeg);
+    return noonAltitude > altitudeDeg ? ThresholdState.ALWAYS_ABOVE : ThresholdState.ALWAYS_BELOW;
+  }
+
+  /**
    * 取锚点：把「本地日 00:00 对应的 UTC 时刻」换算成包含当地正午的那一天 UTC 零点。
    * 必须这样做：NOAA 公式里的太阳正午是「UTC 零点之后 720-4λ-EoT 分钟」，
    * 若直接用本地日零点，在高时区会整体偏移（例如东八区偏 8 小时）。
@@ -222,26 +249,31 @@ export class SolarCalc {
     e.solarNoonUtc = noon;
     e.noonAltitudeDeg = 90.0 - Math.abs(latDeg - decl);
 
-    const sunriseH = SolarCalc.hourAngleForAltitude(latDeg, decl, -0.833);
-    const civilH = SolarCalc.hourAngleForAltitude(latDeg, decl, -6.0);
-    const nauticalH = SolarCalc.hourAngleForAltitude(latDeg, decl, -12.0);
-    const astroH = SolarCalc.hourAngleForAltitude(latDeg, decl, -18.0);
+    // 四个阈值各自独立判定：某一阈值无穿越不得导致其它阈值被跳过。
+    e.sunState = SolarCalc.thresholdState(latDeg, decl, -0.833);
+    e.civilState = SolarCalc.thresholdState(latDeg, decl, -6.0);
+    e.nauticalState = SolarCalc.thresholdState(latDeg, decl, -12.0);
+    e.astronomicalState = SolarCalc.thresholdState(latDeg, decl, -18.0);
 
-    if (sunriseH < 0) {
-      e.polarState = e.noonAltitudeDeg > 0 ? 1 : 2;
-      return e;
+    if (e.sunState === ThresholdState.CROSSING) {
+      const sunriseH = SolarCalc.hourAngleForAltitude(latDeg, decl, -0.833);
+      e.sunriseUtc = e.solarNoonUtc - sunriseH * 240000.0;
+      e.sunsetUtc = e.solarNoonUtc + sunriseH * 240000.0;
+    } else {
+      e.polarState = e.sunState === ThresholdState.ALWAYS_ABOVE ? 1 : 2;
     }
-    e.sunriseUtc = e.solarNoonUtc - sunriseH * 240000.0;
-    e.sunsetUtc = e.solarNoonUtc + sunriseH * 240000.0;
-    if (civilH >= 0) {
+    if (e.civilState === ThresholdState.CROSSING) {
+      const civilH = SolarCalc.hourAngleForAltitude(latDeg, decl, -6.0);
       e.civilDawnUtc = e.solarNoonUtc - civilH * 240000.0;
       e.civilDuskUtc = e.solarNoonUtc + civilH * 240000.0;
     }
-    if (nauticalH >= 0) {
+    if (e.nauticalState === ThresholdState.CROSSING) {
+      const nauticalH = SolarCalc.hourAngleForAltitude(latDeg, decl, -12.0);
       e.nauticalDawnUtc = e.solarNoonUtc - nauticalH * 240000.0;
       e.nauticalDuskUtc = e.solarNoonUtc + nauticalH * 240000.0;
     }
-    if (astroH >= 0) {
+    if (e.astronomicalState === ThresholdState.CROSSING) {
+      const astroH = SolarCalc.hourAngleForAltitude(latDeg, decl, -18.0);
       e.astronomicalDawnUtc = e.solarNoonUtc - astroH * 240000.0;
       e.astronomicalDuskUtc = e.solarNoonUtc + astroH * 240000.0;
     }
@@ -325,31 +357,44 @@ export class SolarCalc {
       noonUtc -= 86400000.0;
     }
 
-    const hGoldenUpper = SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenUpperDeg);
-    const hGoldenLower = SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenLowerDeg);
-    const hBlueLower = SolarCalc.hourAngleForAltitude(latDeg, decl, th.blueLowerDeg);
+    const dayEnd = dayStartLocalUtc + 86400000.0;
+    const upperState = SolarCalc.thresholdState(latDeg, decl, th.goldenUpperDeg);
+    const lowerState = SolarCalc.thresholdState(latDeg, decl, th.goldenLowerDeg);
+    const blueState = SolarCalc.thresholdState(latDeg, decl, th.blueLowerDeg);
 
-    // 黄金时刻：太阳高度在 [goldenLower, goldenUpper] 区间。
-    // 晨间从较低的 goldenLower 升到 goldenUpper，因此起点用 lower、终点用 upper；傍晚相反。
-    if (hGoldenUpper >= 0) {
-      w.goldenMorningEndUtc = noonUtc - hGoldenUpper * 240000.0;
-      w.goldenEveningStartUtc = noonUtc + hGoldenUpper * 240000.0;
-    }
-    if (hGoldenLower >= 0) {
-      w.goldenMorningStartUtc = noonUtc - hGoldenLower * 240000.0;
-      w.goldenEveningEndUtc = noonUtc + hGoldenLower * 240000.0;
-    } else {
-      // 太阳全天高于 goldenLower（高纬夏季）：晨间从当地日零点起算
-      if (hGoldenUpper >= 0) {
-        w.goldenMorningStartUtc = dayStartLocalUtc;
-        w.goldenEveningEndUtc = dayStartLocalUtc + 86400000.0;
+    // 黄金时段：太阳高度落在 [goldenLower, goldenUpper]。
+    // 只有确实存在穿越的阈值才能用来算端点；不可达阈值按「全天高于/低于」退化，
+    // 不允许用无效时角（-1）去推算窗口。
+    if (upperState !== ThresholdState.ALWAYS_ABOVE && lowerState !== ThresholdState.ALWAYS_BELOW) {
+      const hUpper = upperState === ThresholdState.CROSSING
+        ? SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenUpperDeg) : -1.0;
+      const hLower = lowerState === ThresholdState.CROSSING
+        ? SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenLowerDeg) : -1.0;
+      // 晨间：起点取较低阈值（有穿越用它，全天高于则从当日零点起）
+      const morningStart = lowerState === ThresholdState.CROSSING ? noonUtc - hLower * 240000.0 : dayStartLocalUtc;
+      // 晨间终点：+6° 有穿越则取穿越时刻；太阳全天到不了 +6°，时段延续到正午
+      const morningEnd = upperState === ThresholdState.CROSSING ? noonUtc - hUpper * 240000.0 : noonUtc;
+      const eveningStart = upperState === ThresholdState.CROSSING ? noonUtc + hUpper * 240000.0 : noonUtc;
+      const eveningEnd = lowerState === ThresholdState.CROSSING ? noonUtc + hLower * 240000.0 : dayEnd;
+      if (morningStart < morningEnd) {
+        w.goldenMorningStartUtc = morningStart;
+        w.goldenMorningEndUtc = morningEnd;
+      }
+      if (eveningStart < eveningEnd) {
+        w.goldenEveningStartUtc = eveningStart;
+        w.goldenEveningEndUtc = eveningEnd;
       }
     }
-    if (hBlueLower >= 0) {
-      w.blueMorningStartUtc = noonUtc - hBlueLower * 240000.0;
-      w.blueMorningEndUtc = noonUtc - hGoldenLower * 240000.0;
-      w.blueEveningStartUtc = noonUtc + hGoldenLower * 240000.0;
-      w.blueEveningEndUtc = noonUtc + hBlueLower * 240000.0;
+
+    // 蓝调时段：必须两端（-6° 与 goldenLower）都存在穿越才形成区间；
+    // 太阳全天高于 -6°（极昼）或整个白天都低于 -6°（深极夜）时不存在蓝调。
+    if (blueState === ThresholdState.CROSSING && lowerState === ThresholdState.CROSSING) {
+      const hBlue = SolarCalc.hourAngleForAltitude(latDeg, decl, th.blueLowerDeg);
+      const hLower = SolarCalc.hourAngleForAltitude(latDeg, decl, th.goldenLowerDeg);
+      w.blueMorningStartUtc = noonUtc - hBlue * 240000.0;
+      w.blueMorningEndUtc = noonUtc - hLower * 240000.0;
+      w.blueEveningStartUtc = noonUtc + hLower * 240000.0;
+      w.blueEveningEndUtc = noonUtc + hBlue * 240000.0;
     }
     return w;
   }
