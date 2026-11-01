@@ -129,16 +129,38 @@ entry-default-signed.hap  2,096,533 bytes
 BUILD SUCCESSFUL；两 HAP install bundle successfully ×2
 ```
 
-## 9. 真机 IANA 测试
+## 9. 真机 IANA 测试（已执行并通过）
 
-**0 条执行，未验证。** 使用 `-s class TimeZoneReal` 单独运行，设备仍锁屏：
+设备解锁后单独执行 `TimeZoneReal` 套件（不混入 UI 用例）：
 
-```text
-Error Code:10106102  The device screen is locked during the application launch, unlock screen failed.
+```bash
+hdc -t 4EE9K25515007252 shell "aa test -b com.hhyxx.LightBearing -m entry_test \
+  -s unittest OpenHarmonyTestRunner -s class TimeZoneReal -s timeout 90000"
 ```
 
-未绕过锁屏、未修改测试制造通过。修正后的 `zone_rules_transition_values_are_real`（含 `getMilliseconds()`、
-`getOffsetBefore/After` 的真实值）与全部真实时区用例仍未在任何设备上执行过。
+```text
+OHOS_REPORT_RESULT: stream=Tests run: 10, Failure: 0, Error: 0, Pass: 10, Ignore: 0
+```
+
+设备：`MIA-AL00 7.0.0.109(SP8C00E105R5P2)`，API 26。
+
+实际执行的 10 条用例（全部通过）：
+
+| 用例 | 验证内容 |
+|---|---|
+| `new_york_spring_forward_2026_03_08` | 边界 05:00Z→次日 04:00Z、23 小时、02:30 为 GAP |
+| `new_york_fall_back_2026_11_01` | 边界 04:00Z→次日 05:00Z、25 小时、01:30 双候选 05:30Z/06:30Z |
+| `shanghai_regular_day_2026_10_30` | 16:00Z 边界、24 小时、当地正午唯一 |
+| `kathmandu_non_hour_offset` | UTC+05:45 = 20 700 000 ms、日界 18:15Z |
+| `lord_howe_half_hour_dst` | 24.5h / 23.5h 日、02:15 GAP、01:45 双候选相差半小时 |
+| `kiritimati_utc_plus_14` | UTC+14、日界 10:00Z |
+| `apia_skipped_day_2011_12_30` | 整日 SKIPPED、前一天结束于 2011-12-30T10:00Z |
+| `invalid_zone_and_date_are_rejected` | 非法时区返回 NaN/INVALID、2 月 30 日被拒 |
+| `start_of_day_and_add_days_follow_real_bounds` | DST 日 `startOfLocalDay`/`addLocalDays` 落在真实边界 |
+| `zone_rules_transition_values_are_real` | `nextTransition().getMilliseconds()/getOffsetBefore/After` 真实值：纽约 2026-03-08T07:00Z（−5h→−4h）；豪勋爵 4 月回拨 −30 分钟、10 月前跳 +30 分钟 |
+
+至此，`i18n` 真实时区数据（含跳变对象三个方法）与全部 23/25/23.5/24.5 小时边界
+在真机上得到确认，不再是「仅合成时区验证」。
 
 ## 10. 留给 2B-3 的 UI/图表工作
 

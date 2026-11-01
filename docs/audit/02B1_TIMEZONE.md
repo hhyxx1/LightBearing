@@ -403,3 +403,29 @@ Error Code:10106102  The device screen is locked during the application launch, 
 2. SolarCalc 与 4 个页面的 `-1`/`< 0` 哨兵尚未换成语义化状态（见 F3 表格），属 2B-2。
 3. 1900–2200 的年份范围未复核是否覆盖所有历史时区数据。
 4. 逐分钟扫描整日的性能代价（仅 00:00 落在缺口时触发）仍未在日历页实测。
+
+---
+
+# 设备验证补记（2B-2 期间补齐）
+
+设备解锁后单独执行 `TimeZoneReal`（`-s class TimeZoneReal`，不混入 UI 用例）：
+
+```text
+OHOS_REPORT_RESULT: stream=Tests run: 10, Failure: 0, Error: 0, Pass: 10, Ignore: 0
+设备：MIA-AL00 7.0.0.109(SP8C00E105R5P2)，API 26
+```
+
+本次真正在设备上确认了此前只有合成时区/文档依据的部分：
+
+| 此前未验证项 | 设备实测结论 |
+|---|---|
+| `getZoneRules().nextTransition()` 可用性 | 可用，返回真实跳变对象 |
+| `getMilliseconds()` 真实返回值 | 纽约 = 2026-03-08T07:00Z；豪勋爵 = 2026-04-04T15:00Z |
+| `getOffsetBefore()` / `getOffsetAfter()` | 纽约 −5h → −4h；豪勋爵 +11h → +10:30（回拨 −30 分钟），10 月前跳 +30 分钟 |
+| 23 / 25 / 23.5 / 24.5 小时真实日边界 | 全部与手算固定 UTC 常量一致 |
+| 历史规则（Apia 2011-12-30 整日跳过） | 实测 SKIPPED，前一天结束于 2011-12-30T10:00Z |
+| 非整点时区（加德满都 +05:45） | 20 700 000 ms，日界 18:15Z |
+| UTC+14（基里蒂马蒂） | 日界 10:00Z，24 小时 |
+
+因此 §10 第 1 条（真实 IANA 未验证）已关闭。仍未验证的是：
+1970 年前的跳变语义（`getMilliseconds() <= 0`）、午夜跳变日逐分钟扫描在日历页的性能表现。
