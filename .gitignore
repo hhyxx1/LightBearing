@@ -16,4 +16,5 @@
 /testbuild.log
 /testrun*.log
 /unit-test.log
+/device-test.log
 /layout.json
