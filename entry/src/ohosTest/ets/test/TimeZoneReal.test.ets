@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
+import { i18n } from '@kit.LocalizationKit';
 import { TimeUtil } from '../../../main/ets/services/TimeUtil';
 import { DayKind, LocalDayBounds, LocalResolveResult, LocalResolveStatus } from '../../../main/ets/services/LocalTimeResolver';
 
@@ -122,6 +123,19 @@ export default function timeZoneRealTest() {
       // 2 月 30 日必须被拒绝，不能被规范化成 3 月 2 日
       const badDate = TimeUtil.resolveLocal('Asia/Shanghai', 2026, 2, 30, 10, 0);
       expect(badDate.status).assertEqual(LocalResolveStatus.INVALID);
+    });
+
+    it('zone_rules_transition_values_are_real', 0, () => {
+      // 直接核验 i18n 跳变对象的真实返回值，确认不是我编的接口
+      const rules = i18n.getTimeZone('America/New_York').getZoneRules();
+      const transition = rules.nextTransition(Date.UTC(2026, 0, 1, 0, 0, 0));
+      expect(transition.getMilliseconds()).assertEqual(Date.UTC(2026, 2, 8, 7, 0, 0));
+      expect(transition.getOffsetBefore()).assertEqual(-5 * HOUR);
+      expect(transition.getOffsetAfter()).assertEqual(-4 * HOUR);
+      // 豪勋爵岛：半小时夏令时，前后偏移差必须恰好 30 分钟
+      const lhRules = i18n.getTimeZone('Australia/Lord_Howe').getZoneRules();
+      const lhTransition = lhRules.nextTransition(Date.UTC(2026, 0, 1, 0, 0, 0));
+      expect(lhTransition.getOffsetAfter() - lhTransition.getOffsetBefore()).assertEqual(HALF_HOUR);
     });
 
     it('start_of_day_and_add_days_follow_real_bounds', 0, () => {

@@ -176,3 +176,117 @@ hdc -t 4EE9K25515007252 shell "aa test -b com.hhyxx.LightBearing -m entry_test -
 3. `bandWindows()`/`events()` 的日长参数默认仍是 24 小时，未传 `dayEndLocalUtc` 的旧调用点行为不变——这属于刻意兼容，2B-2 要逐个改为真实边界。
 4. `isValidTimeZoneId` 依赖 `getAvailableIDs()` 全量列表（首次调用建立缓存），列表含历史别名；若设备 tzdata 缺少某个 ID，会被判为非法（宁可拒绝也不静默 UTC）。
 5. `fromLocal()` 对 `GAP` 返回缺口结束时刻，属于兼容行为，界面若需明确提示应改用 `resolveLocal()`。
+
+---
+
+# 补充修复（复审后追加）
+
+复审要求补两项异常处理验证、单独跑真机 IANA 套件、并复核历史日期与日界极端。以下逐项对应。
+
+## S1. 数据不可用不再被误判为 GAP
+
+**原问题**：`resolve()` 在候选 UTC 为空时直接返回 `GAP`。但候选为空也可能是探针拿不到数据
+（`offsetAt()` 返回 NaN、跳变表不可用、候选校验阶段查询失败），此时向用户报「该时间不存在」是错的。
+
+**修复**：
+
+| 场景 | 判定 | 说明 |
+|---|---|---|
+| 探针 `isValid() === false` | `INVALID` | 非法时区 |
+| 日期/时间越界 | `INVALID` | 严格校验，不允许 `Date.UTC` 规范化 |
+| 偏移查询返回 NaN（采集或校验阶段） | **`UNAVAILABLE`（新增状态）** | 明确表示「数据不可用，无法判断」，绝不报 GAP |
+| 候选全部校验通过 0 个、且无故障 | `GAP` | 真实缺口 |
+| 偏移值恰为 0（UTC+00:00） | 正常参与候选 | 用 `Number.isNaN` 判断失败，不用真假值 |
+
+`dayBounds()` 同样区分：起点/终点算不出来且原因是数据不可用时返回 `kind = INVALID`，
+而不是 `SKIPPED`——「整日被跳过」必须是真的被跳过。
+
+**新增测试（宿主机，合成探针）**：
+
+| 用例 | 预期 | 实际 |
+|---|---|---|
+| `zero_offset_is_valid_not_failure`（偏移 0 的时区正午） | `UNIQUE`、偏移 0、日 24h | ✅ |
+| `probe_data_unavailable_is_not_gap`（有效探针 + 全部 NaN） | `UNAVAILABLE`，且 `dayBounds` 为 `INVALID` 而非 `SKIPPED` | ✅ |
+| `candidate_verification_failure_is_unavailable`（仅候选时刻返回 NaN） | `UNAVAILABLE` | ✅ |
+| `real_gap_and_overlap_still_reported` | 纽约春 02:30 → `GAP`；秋 01:30 → `OVERLAP` | ✅ |
+
+## S2. `fromLocal()` 缺口回退改为「必须匹配对应跳变」
+
+**原问题**：拿到 `GAP` 后用 `transitionAfter(naive − 36h)` 取到的那次跳变直接当缺口结束，
+没有验证这次跳变是否真的造成了输入时刻的缺口——可能返回一个不相关跳变的时间。
+
+**修复**（`LocalTimeResolver.toUtcCompat()`）：
+
+```text
+缺口区间（本地）= [atUtc + offsetBefore, atUtc + offsetAfter)
+仅当 offsetAfter > offsetBefore 且 naive ∈ 该区间时，才返回 atUtc（缺口结束的第一个真实时刻）
+否则返回 NaN
+```
+
+`offsetAfter <= offsetBefore`（回拨）被显式排除；跳变表里没有覆盖该时刻的跳变时一律 NaN，不猜。
+
+**新增测试**：
+
+| 用例 | 预期 | 实际 |
+|---|---|---|
+| `compat_fromLocal_gap_returns_gap_end`（纽约春 02:30） | 返回 07:00Z，换算回本地 = 03:00 | ✅ |
+| `compat_fromLocal_half_hour_gap`（豪勋爵 02:15） | 返回 2026-10-03T15:30Z，本地 = 02:30 | ✅ |
+| `compat_fromLocal_skipped_day`（阿皮亚 12-30 12:00） | 返回 2011-12-30T10:00Z，本地 = 12-31 00:00 | ✅ |
+| `compat_fromLocal_normal_and_overlap` | 普通时间唯一候选；重复时间取较早 | ✅ |
+| `compat_fromLocal_never_guesses_without_matching_transition` | 探针故障 / 跳变不匹配 / 非法日期 → `NaN` | ✅ |
+
+文档与代码注释均已标注：`fromLocal()` 是**兼容接口**，不适合处理需要用户确认的时间输入；
+UI 迁移必须用 `resolveLocal()`。
+
+## S3. 历史日期与日界极端
+
+| 风险 | 结论与处理 |
+|---|---|
+| `transitionAfter()` 把 `ms <= 0` 视为无跳变 | 按官方文档，`getMilliseconds()` 在「raw offset 不变且不使用夏令时」时返回 0；真实跳变时间戳为 0 只会发生在 1970-01-01T00:00Z 这一刻，属于极端历史边界。**不影响解析正确性**：`resolve()` 只把跳变当作候选偏移的补充来源，主来源是前后 36 小时的偏移采样。新增 `resolver_works_without_transition_info` 证明「完全没有跳变表」时 `UNIQUE` / `OVERLAP` 仍然正确。 |
+| `firstExistingInstant()` 抽样判断整日跳过 | **原实现有真实风险**：抽样 6/12/18/23 点可能全部落在相邻日期。已删除抽样快捷判断，改为 00:00 不可用时**逐分钟扫描整日**；新增 `short_valid_window_day_is_not_marked_skipped`（构造本地日仅 01:00–04:00 存在，3 小时）验证不再误判 SKIPPED。代价：仅当 00:00 落在缺口里才会有最多 1440 次解析（罕见日）。 |
+| `addLocalDays()` 遇到被跳过日期返回 NaN | 改为沿推进方向寻找最近的存在的日期（前进向后找、后退向前找，最多 4 天），找不到才 NaN。新增 `add_local_days_skips_skipped_calendar_day`：阿皮亚 12-29 `+1` → 12-31 起点；12-31 `−1` → 12-29 起点；普通时区 `+1` 正确。 |
+| 历史日期（1970 前） | 无实际可触发问题，未做大规模改写；在 §10 保留为未验证边界。 |
+
+## S4. 本轮实际执行结果
+
+```text
+# 宿主机全部单元测试（保留原 46 条 + 新增 12 条）
+> hvigor BUILD SUCCESSFUL in 8 s 193 ms
+Tests run: 58, Failure: 0, Error: 0, Pass: 58, Ignore: 0
+
+# 应用构建
+> hvigor BUILD SUCCESSFUL in 11 s 761 ms
+entry-default-signed.hap  2,084,444 bytes
+
+# 测试包构建
+> hvigor BUILD SUCCESSFUL in 9 s 458 ms
+两 HAP 安装成功（install bundle successfully ×2）
+```
+
+**真机 IANA 套件：0 条执行，未验证。** 使用任务书给的命令单独跑 `TimeZoneReal`：
+
+```bash
+hdc shell "aa test -b com.hhyxx.LightBearing -m entry_test -s unittest OpenHarmonyTestRunner -s class TimeZoneReal -s timeout 90000"
+```
+
+设备仍处锁屏，测试 Ability 无法启动：
+
+```text
+error: failed to start ability.
+Error Code:10106102  The device screen is locked during the application launch, unlock screen failed.
+TestFinished-ResultCode: -3
+```
+
+按要求未尝试绕过锁屏、未修改测试。因此 **New York / Shanghai / Kathmandu / Lord Howe / Kiritimati / Apia
+六个真实时区用例本轮全部未执行**。本轮新增的设备侧用例
+`zone_rules_transition_values_are_real`（直接核验 `getMilliseconds()` = 2026-03-08T07:00Z、
+前后偏移 −5h/−4h、豪勋爵前后差 30 分钟）同样未执行。
+
+解锁后可单独复跑上述命令；`-s class TimeZoneReal` 只跑该套件，不会混入 UI 用例。
+
+## S5. 补充后的遗留
+
+1. 真机 IANA 数据（含 `getMilliseconds()`/`getOffsetBefore/After` 的真实返回值）**仍未经设备验证**，这是本轮最大的未验证项。
+2. 1970 年前的跳变（`getMilliseconds() <= 0`）语义未实测；当前实现不依赖跳变表，但历史边界仍属未验证。
+3. 逐分钟扫描整日的最坏代价 1440 次解析，日历页跨大量「00:00 落在缺口」的日期时需要缓存，属 2B-2 评估项。
+4. `UNAVAILABLE` 目前只在 `resolveLocal` / 内部使用；页面尚未展示该状态（2B-2 迁移时补 UI 提示）。

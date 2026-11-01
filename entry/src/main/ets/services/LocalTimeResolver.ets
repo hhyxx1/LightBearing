@@ -48,7 +48,9 @@ export enum LocalResolveStatus {
   /** 本地时间对应两个 UTC 时刻（夏令时回拨） */
   OVERLAP = 2,
   /** 日期/时间/时区非法 */
-  INVALID = 3
+  INVALID = 3,
+  /** 时区数据不可用（探针失败/偏移查询返回 NaN），不代表时间不存在 */
+  UNAVAILABLE = 4
 }
 
 /** 本地时间解析结果 */
@@ -163,23 +165,40 @@ export class LocalTimeResolver {
     }
     const naive = Date.UTC(year, month - 1, day, hour, minute, 0);
     const offsets: number[] = [];
-    LocalTimeResolver.pushOffset(offsets, probe.offsetAt(naive - 36 * MS_PER_HOUR));
-    LocalTimeResolver.pushOffset(offsets, probe.offsetAt(naive));
-    LocalTimeResolver.pushOffset(offsets, probe.offsetAt(naive + 36 * MS_PER_HOUR));
+    // 探针取不到数据时必须能与「时间不存在」区分开：NaN 记为探针故障
+    let probeFailure = false;
+    const addOffset = (value: number): void => {
+      if (Number.isNaN(value) || !Number.isFinite(value)) {
+        probeFailure = true;
+        return;
+      }
+      // 偏移 0 是合法值（UTC+00:00），不能当成失败
+      if (offsets.indexOf(value) < 0) {
+        offsets.push(value);
+      }
+    };
+    addOffset(probe.offsetAt(naive - 36 * MS_PER_HOUR));
+    addOffset(probe.offsetAt(naive));
+    addOffset(probe.offsetAt(naive + 36 * MS_PER_HOUR));
     const near = probe.transitionAfter(naive - 3 * MS_PER_DAY);
     if (near !== undefined && near.atUtc <= naive + 3 * MS_PER_DAY) {
-      LocalTimeResolver.pushOffset(offsets, near.offsetBefore);
-      LocalTimeResolver.pushOffset(offsets, near.offsetAfter);
+      addOffset(near.offsetBefore);
+      addOffset(near.offsetAfter);
     }
     const later = probe.transitionAfter(naive);
     if (later !== undefined && later.atUtc <= naive + 3 * MS_PER_DAY) {
-      LocalTimeResolver.pushOffset(offsets, later.offsetBefore);
-      LocalTimeResolver.pushOffset(offsets, later.offsetAfter);
+      addOffset(later.offsetBefore);
+      addOffset(later.offsetAfter);
     }
 
     for (const offset of offsets) {
       const utc = naive - offset;
-      if (probe.offsetAt(utc) !== offset) {
+      const actual = probe.offsetAt(utc);
+      if (Number.isNaN(actual)) {
+        probeFailure = true;
+        continue;
+      }
+      if (actual !== offset) {
         continue;
       }
       if (!LocalTimeResolver.matchesLocalFields(utc, offset, year, month, day, hour, minute)) {
@@ -191,8 +210,14 @@ export class LocalTimeResolver {
     LocalTimeResolver.sortCandidates(r);
 
     if (r.candidatesUtc.length === 0) {
-      r.status = LocalResolveStatus.GAP;
-      r.reason = '该本地时间处于夏令时前跳的缺口内，不存在';
+      if (probeFailure) {
+        // 探针故障绝不能报成「时间不存在」
+        r.status = LocalResolveStatus.UNAVAILABLE;
+        r.reason = '时区数据不可用，无法判断该本地时间是否存在';
+      } else {
+        r.status = LocalResolveStatus.GAP;
+        r.reason = '该本地时间处于夏令时前跳的缺口内，不存在';
+      }
     } else if (r.candidatesUtc.length === 1) {
       r.status = LocalResolveStatus.UNIQUE;
       r.reason = '唯一对应';
@@ -229,6 +254,12 @@ export class LocalTimeResolver {
       return b;
     }
     const start = LocalTimeResolver.firstExistingInstant(probe, year, month, day);
+    if (start === -2) {
+      b.valid = false;
+      b.kind = DayKind.INVALID;
+      b.reason = '时区数据不可用，无法确定本地日边界';
+      return b;
+    }
     if (start < 0) {
       b.valid = false;
       b.kind = DayKind.SKIPPED;
@@ -245,6 +276,12 @@ export class LocalTimeResolver {
       nm = nextDate[1];
       nd = nextDate[2];
       end = LocalTimeResolver.firstExistingInstant(probe, ny, nm, nd);
+      if (end === -2) {
+        b.valid = false;
+        b.kind = DayKind.INVALID;
+        b.reason = '时区数据不可用，无法确定本地日结束边界';
+        return b;
+      }
     }
     if (end < 0) {
       b.valid = false;
@@ -274,33 +311,28 @@ export class LocalTimeResolver {
     return b;
   }
 
-  /** 该本地日在真实时间上存在的第一个时刻；整日不存在返回 -1 */
+  /**
+   * 该本地日在真实时间上存在的第一个时刻。
+   * 返回 -1 表示整日不存在；返回 -2 表示时区数据不可用（不能当作跳过）。
+   *
+   * 00:00 不可用时逐分钟扫描整日——不做抽样快捷判断，
+   * 因为存在「整日只在很短一段时间内有效」的极端时区跳变日（见测试 short_valid_window_day）。
+   */
   static firstExistingInstant(probe: ZoneProbe, year: number, month: number, day: number): number {
     const direct = LocalTimeResolver.resolve(probe, year, month, day, 0, 0);
+    if (direct.status === LocalResolveStatus.UNAVAILABLE) {
+      return -2;
+    }
     if (direct.status === LocalResolveStatus.UNIQUE || direct.status === LocalResolveStatus.OVERLAP) {
       return direct.candidatesUtc[0];
     }
-    // 00:00 落在缺口里：先粗查几个时刻，全部缺失则说明整日被跳过
-    const hourProbes: number[] = [6, 12, 18, 23];
-    let anyValid = false;
-    for (const h of hourProbes) {
-      const r = LocalTimeResolver.resolve(probe, year, month, day, h, 0);
-      if (r.status === LocalResolveStatus.UNIQUE || r.status === LocalResolveStatus.OVERLAP) {
-        anyValid = true;
-      }
-    }
-    if (!anyValid) {
-      // 再确认 23:59 也不存在（避免遗漏只存在于最后几分钟的情形）
-      const last = LocalTimeResolver.resolve(probe, year, month, day, 23, 59);
-      if (last.status !== LocalResolveStatus.UNIQUE && last.status !== LocalResolveStatus.OVERLAP) {
-        return -1;
-      }
-    }
-    // 逐分钟找到第一个存在的时刻（只在罕见的午夜跳变日执行）
     for (let minutes = 1; minutes < 1440; minutes++) {
       const h = Math.floor(minutes / 60);
       const m = minutes % 60;
       const r = LocalTimeResolver.resolve(probe, year, month, day, h, m);
+      if (r.status === LocalResolveStatus.UNAVAILABLE) {
+        return -2;
+      }
       if (r.status === LocalResolveStatus.UNIQUE || r.status === LocalResolveStatus.OVERLAP) {
         return r.candidatesUtc[0];
       }
@@ -308,13 +340,88 @@ export class LocalTimeResolver {
     return -1;
   }
 
-  private static pushOffset(list: number[], value: number): void {
-    if (!Number.isFinite(value)) {
-      return;
+  /** 公历减一天 */
+  static minusOneDay(year: number, month: number, day: number): number[] {
+    const base = new Date(Date.UTC(year, month - 1, day));
+    base.setUTCDate(base.getUTCDate() - 1);
+    return [base.getUTCFullYear(), base.getUTCMonth() + 1, base.getUTCDate()];
+  }
+
+  /** 取 naive 前后 windowHours 内的跳变（最多 3 次） */
+  static transitionsNear(probe: ZoneProbe, naiveMs: number, windowHours: number): ZoneTransitionInfo[] {
+    const out: ZoneTransitionInfo[] = [];
+    const limit = naiveMs + windowHours * MS_PER_HOUR;
+    let cursor = naiveMs - windowHours * MS_PER_HOUR;
+    for (let i = 0; i < 3; i++) {
+      const t = probe.transitionAfter(cursor);
+      if (t === undefined || t.atUtc > limit) {
+        break;
+      }
+      out.push(t);
+      cursor = t.atUtc;
     }
-    if (list.indexOf(value) < 0) {
-      list.push(value);
+    return out;
+  }
+
+  /**
+   * 兼容接口 fromLocal() 的实现。
+   *
+   * - UNIQUE / OVERLAP：返回最早候选；
+   * - GAP：只有确认「存在一次前跳跳变，且其本地缺口区间真的覆盖输入时刻」时才返回
+   *   缺口结束的第一个真实时刻（= 该跳变的 UTC 时刻）；找不到对应跳变一律返回 NaN；
+   * - INVALID / UNAVAILABLE：返回 NaN，不猜测。
+   */
+  static toUtcCompat(probe: ZoneProbe, year: number, month: number, day: number,
+    hour: number, minute: number): number {
+    const r = LocalTimeResolver.resolve(probe, year, month, day, hour, minute);
+    if (r.status === LocalResolveStatus.UNIQUE || r.status === LocalResolveStatus.OVERLAP) {
+      return r.candidatesUtc[0];
     }
+    if (r.status !== LocalResolveStatus.GAP) {
+      return NaN;
+    }
+    const naive = Date.UTC(year, month - 1, day, hour, minute, 0);
+    const near = LocalTimeResolver.transitionsNear(probe, naive, 48);
+    for (const t of near) {
+      if (t.offsetAfter <= t.offsetBefore) {
+        continue; // 只处理前跳造成的缺口
+      }
+      const gapStartLocal = t.atUtc + t.offsetBefore;
+      const gapEndLocal = t.atUtc + t.offsetAfter;
+      if (naive >= gapStartLocal && naive < gapEndLocal) {
+        return t.atUtc;
+      }
+    }
+    return NaN;
+  }
+
+  /**
+   * 兼容接口 addLocalDays() 的实现：本地日 +N 天后的第一个存在时刻。
+   * 目标日若被时区跳变整日跳过，按推进方向寻找最近的存在的日期
+   * （前进时向后找、后退时向前找，最多 4 天；找不到才返回 NaN）。
+   */
+  static addLocalDayStart(probe: ZoneProbe, year: number, month: number, day: number, days: number): number {
+    let current: number[] = [year, month, day];
+    const steps = Math.abs(days);
+    for (let i = 0; i < steps; i++) {
+      current = days >= 0
+        ? LocalTimeResolver.plusOneDay(current[0], current[1], current[2])
+        : LocalTimeResolver.minusOneDay(current[0], current[1], current[2]);
+    }
+    for (let i = 0; i < 4; i++) {
+      const b = LocalTimeResolver.dayBounds(probe, current[0], current[1], current[2]);
+      if (b.valid) {
+        return b.startUtc;
+      }
+      if (b.kind !== DayKind.SKIPPED) {
+        return NaN;
+      }
+      // 沿推进方向继续找：后退（days<0）时向前一天找，避免退回到出发日
+      current = days >= 0
+        ? LocalTimeResolver.plusOneDay(current[0], current[1], current[2])
+        : LocalTimeResolver.minusOneDay(current[0], current[1], current[2]);
+    }
+    return NaN;
   }
 
   /** 反向校验：utc + offset 的本地年月日时分是否与输入完全一致 */

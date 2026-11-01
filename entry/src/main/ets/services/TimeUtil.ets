@@ -174,20 +174,7 @@ export class TimeUtil {
    * - INVALID（日期/时区非法）：返回 NaN。
    */
   static fromLocal(tzId: string, year: number, month: number, day: number, hour: number, minute: number): number {
-    const probe = new I18nZoneProbe(tzId);
-    const result = LocalTimeResolver.resolve(probe, year, month, day, hour, minute);
-    if (result.status === LocalResolveStatus.UNIQUE || result.status === LocalResolveStatus.OVERLAP) {
-      return result.candidatesUtc[0];
-    }
-    if (result.status === LocalResolveStatus.GAP) {
-      const naive = Date.UTC(year, month - 1, day, hour, minute, 0);
-      const transition = probe.transitionAfter(naive - 36 * 3600000.0);
-      if (transition !== undefined) {
-        return transition.atUtc;
-      }
-      return NaN;
-    }
-    return NaN;
+    return LocalTimeResolver.toUtcCompat(new I18nZoneProbe(tzId), year, month, day, hour, minute);
   }
 
   /** 本地日期 00:00 对应的 UTC 毫秒（00:00 被跳变吃掉时取该日第一个存在的时刻） */
@@ -206,10 +193,7 @@ export class TimeUtil {
     if (!p.valid) {
       return NaN;
     }
-    const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + days));
-    const b = TimeUtil.localDayBounds(tzId, shifted.getUTCFullYear(),
-      shifted.getUTCMonth() + 1, shifted.getUTCDate());
-    return b.valid ? b.startUtc : NaN;
+    return LocalTimeResolver.addLocalDayStart(new I18nZoneProbe(tzId), p.year, p.month, p.day, days);
   }
 
   /** HH:mm */
