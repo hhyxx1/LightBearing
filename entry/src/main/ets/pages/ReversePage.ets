@@ -4,7 +4,7 @@ import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, Candidate, SearchGoal, IdGen } from '../model/Models';
 import { Job, JobStatus } from '../model/BaseModels';
 import { SolarCalc } from '../services/SolarCalc';
-import { ReverseSearch } from '../services/ReverseSearch';
+import { ReverseSearch, DayRange } from '../services/ReverseSearch';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard,
@@ -118,27 +118,39 @@ export struct ReversePage {
       goal.daylightOnly = this.daylightOnly;
       goal.maxResults = 30;
 
-      const dayStarts: number[] = [];
-      let cursor = TimeUtil.startOfLocalDay(place.tzId, TimeUtil.now());
+      // 逐日取真实本地日区间 [startUtc, endUtc)；被整日跳过的日期不参与搜索，也不计入进度
+      const ranges: DayRange[] = [];
+      const startLocal = TimeUtil.toLocal(place.tzId, TimeUtil.now());
+      if (!startLocal.valid) {
+        throw new Error('机位时区不可用，无法确定本地日期');
+      }
+      let cursorDate: number[] = [startLocal.year, startLocal.month, startLocal.day];
       for (let i = 0; i < days; i++) {
-        dayStarts.push(cursor);
-        cursor = TimeUtil.addLocalDays(place.tzId, cursor, 1);
+        const bounds = TimeUtil.localDayBounds(place.tzId, cursorDate[0], cursorDate[1], cursorDate[2]);
+        if (bounds.valid) {
+          ranges.push(DayRange.of(bounds.startUtc, bounds.endUtc));
+        }
+        const next = new Date(Date.UTC(cursorDate[0], cursorDate[1] - 1, cursorDate[2] + 1));
+        cursorDate = [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()];
+      }
+      if (ranges.length === 0) {
+        throw new Error('所选日期范围内没有可搜索的本地日（时区数据不可用）');
       }
 
       const t0 = new Date().getTime();
       const th = AppState.thresholds();
       const found: Candidate[] = [];
       // 逐日推进：每天让出一帧，进度与命中数实时可见
-      for (let i = 0; i < dayStarts.length; i++) {
+      for (let i = 0; i < ranges.length; i++) {
         if (this.cancelRequested) {
           break;
         }
-        const part: Candidate[] = ReverseSearch.search(goal, th, [dayStarts[i]]);
+        const part: Candidate[] = ReverseSearch.searchInRanges(goal, th, [ranges[i]]);
         for (const c of part) {
           found.push(c);
         }
-        this.sheetPercent = Math.round(((i + 1) * 100) / dayStarts.length);
-        this.sheetDetail = `第 ${i + 1}/${dayStarts.length} 天 · 已命中 ${found.length}`;
+        this.sheetPercent = Math.round(((i + 1) * 100) / ranges.length);
+        this.sheetDetail = `第 ${i + 1}/${ranges.length} 天 · 已命中 ${found.length}`;
         await AppDb.updateJob(jobId, JobStatus.RUNNING, this.sheetPercent, '');
         await this.nextFrame();
       }

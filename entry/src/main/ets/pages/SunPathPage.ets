@@ -23,6 +23,7 @@ export struct SunPathPage {
   @State tzId: string = '';
   @State placeName: string = '';
   @State dayStartUtc: number = 0;
+  @State dayEndUtc: number = 0;
   @State selectedUtc: number = 0;
   @State sliderMinutes: number = 720;
   @State azText: string = '--';
@@ -56,6 +57,7 @@ export struct SunPathPage {
       this.placeName = place.name;
       this.tzId = place.tzId;
       this.dayStartUtc = TimeUtil.startOfLocalDay(place.tzId, TimeUtil.now());
+      this.syncDayEnd();
       this.syncPickedDate();
       this.sliderMinutes = 720;
       this.applyTime(12, 0);
@@ -83,7 +85,7 @@ export struct SunPathPage {
     this.altText = `${pos.altitudeDeg.toFixed(1)}°`;
     this.phaseLabel = SolarCalc.phaseLabel(SolarCalc.phaseOf(pos.altitudeDeg, AppState.thresholds()));
 
-    const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84);
+    const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84, this.dayEndUtc);
     this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
     this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
     this.noonText = TimeUtil.formatTime(place.tzId, ev.solarNoonUtc);
@@ -97,8 +99,27 @@ export struct SunPathPage {
     }
   }
 
+  /** 用真实本地日边界（夏令时切换日可能是 23/25 小时）；不可用时置 0，界面按「无」处理 */
+  private syncDayEnd(): void {
+    if (!Number.isFinite(this.dayStartUtc) || this.dayStartUtc <= 0) {
+      this.dayEndUtc = 0;
+      return;
+    }
+    const local = TimeUtil.toLocal(this.tzId, this.dayStartUtc);
+    if (!local.valid) {
+      this.dayEndUtc = 0;
+      return;
+    }
+    const bounds = TimeUtil.localDayBounds(this.tzId, local.year, local.month, local.day);
+    this.dayEndUtc = bounds.valid ? bounds.endUtc : 0;
+  }
+
   private changeDay(deltaDays: number): void {
-    this.dayStartUtc = TimeUtil.addLocalDays(this.tzId, this.dayStartUtc, deltaDays);
+    const nextStart = TimeUtil.addLocalDays(this.tzId, this.dayStartUtc, deltaDays);
+    if (Number.isFinite(nextStart)) {
+      this.dayStartUtc = nextStart;
+    }
+    this.syncDayEnd();
     this.syncPickedDate();
     this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
   }
@@ -163,6 +184,7 @@ export struct SunPathPage {
             const place = AppState.currentPlace;
             if (place !== undefined) {
               this.dayStartUtc = TimeUtil.startOfLocalDay(place.tzId, TimeUtil.now());
+              this.syncDayEnd();
               this.syncPickedDate();
               this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
             }
@@ -186,7 +208,10 @@ export struct SunPathPage {
         selected: this.pickedDate
       })
         .onDateChange((value: Date) => {
-          this.dayStartUtc = TimeUtil.fromLocal(this.tzId, value.getFullYear(), value.getMonth() + 1, value.getDate(), 0, 0);
+          const picked = TimeUtil.localDayBounds(this.tzId, value.getFullYear(),
+            value.getMonth() + 1, value.getDate());
+          this.dayStartUtc = picked.valid ? picked.startUtc : 0;
+          this.dayEndUtc = picked.valid ? picked.endUtc : 0;
           this.pickedDate = value;
           this.applyTime(Math.floor(this.sliderMinutes / 60), Math.round(this.sliderMinutes % 60));
         })

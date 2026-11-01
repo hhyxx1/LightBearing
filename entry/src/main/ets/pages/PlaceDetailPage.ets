@@ -45,11 +45,20 @@ export struct PlaceDetailPage {
       }
       this.place = found;
       this.isCurrent = AppState.currentPlace !== undefined && AppState.currentPlace.id === found.id;
-      const dayStart = TimeUtil.startOfLocalDay(found.tzId, TimeUtil.now());
-      const ev: SolarEvents = SolarCalc.events(dayStart, found.latWgs84, found.lonWgs84);
+      const nowLocal = TimeUtil.toLocal(found.tzId, TimeUtil.now());
+      let dayStart = 0;
+      let dayEnd = 0;
+      if (nowLocal.valid) {
+        const bounds = TimeUtil.localDayBounds(found.tzId, nowLocal.year, nowLocal.month, nowLocal.day);
+        if (bounds.valid) {
+          dayStart = bounds.startUtc;
+          dayEnd = bounds.endUtc;
+        }
+      }
+      const ev: SolarEvents = SolarCalc.events(dayStart, found.latWgs84, found.lonWgs84, dayEnd);
       this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(found.tzId, ev.sunriseUtc);
       this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(found.tzId, ev.sunsetUtc);
-      const w = SolarCalc.lightWindows(dayStart, found.latWgs84, found.lonWgs84, AppState.thresholds());
+      const w = SolarCalc.lightWindows(dayStart, found.latWgs84, found.lonWgs84, AppState.thresholds(), dayEnd);
       this.goldenText = w.goldenEveningStartUtc < 0 ? '无'
         : `${TimeUtil.formatTime(found.tzId, w.goldenEveningStartUtc)}-${TimeUtil.formatTime(found.tzId, w.goldenEveningEndUtc)}`;
       this.ready = true;

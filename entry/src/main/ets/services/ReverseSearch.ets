@@ -14,7 +14,22 @@ const REFINE_STEPS: number[] = [30 * 1000, 5 * 1000, 1000];
  * 2. 命中后在其邻域按 30s / 5s / 1s 逐级细化，取误差最小点；
  * 3. 相邻命中合并为同一时间窗口，仅保留该窗口内的最优解；
  * 4. 按总误差升序输出，附带误差、当地时间与阶段。
+ *
+ * 2B-2 起每个搜索日由 `DayRange` 表示真实本地日区间 [startUtc, endUtc)：
+ * 夏令时切换日可能是 23/25/23.5/24.5 小时，绝不再假设 86400000。
  */
+export class DayRange {
+  startUtc: number = 0;
+  endUtc: number = 0;
+
+  static of(startUtc: number, endUtc: number): DayRange {
+    const r = new DayRange();
+    r.startUtc = startUtc;
+    r.endUtc = endUtc;
+    return r;
+  }
+}
+
 export class ReverseSearch {
   /** 综合误差度量：方位误差 + 高度误差（度） */
   private static cost(pos: SunPosition, goal: SearchGoal): number {
@@ -29,12 +44,13 @@ export class ReverseSearch {
     return azErr <= goal.azTolerance && altErr <= goal.altTolerance;
   }
 
-  /** 局部细化：在 centerMs 附近 ±windowMs 内按 stepMs 找最优 */
-  private static refineAt(goal: SearchGoal, centerMs: number, windowMs: number, stepMs: number): number {
+  /** 局部细化：在 centerMs 附近 ±windowMs 内按 stepMs 找最优，结果限制在 [minMs, maxMs) 内 */
+  private static refineAt(goal: SearchGoal, centerMs: number, windowMs: number, stepMs: number,
+    minMs: number, maxMs: number): number {
     let bestT = centerMs;
     let bestCost = Number.MAX_VALUE;
-    let t = centerMs - windowMs;
-    const end = centerMs + windowMs;
+    let t = Math.max(minMs, centerMs - windowMs);
+    const end = Math.min(maxMs - 1, centerMs + windowMs);
     while (t <= end) {
       const pos = SolarCalc.position(t, goal.latWgs84, goal.lonWgs84);
       const c = ReverseSearch.cost(pos, goal);
@@ -44,25 +60,27 @@ export class ReverseSearch {
       }
       t += stepMs;
     }
-    return bestT;
+    return Math.min(Math.max(bestT, minMs), maxMs - 1);
   }
 
   /**
-   * 执行搜索。
-   * @param dayStartsUtc 每一天的本地 00:00 对应 UTC 毫秒（由调用方按地点时区生成）
+   * 按真实本地日区间搜索。
+   * @param ranges 每个元素是一个 [startUtc, endUtc) 本地日区间，由 TimeUtil.localDayBounds() 生成
    */
-  static search(goal: SearchGoal, thresholds: LightThresholds, dayStartsUtc: number[]): Candidate[] {
+  static searchInRanges(goal: SearchGoal, thresholds: LightThresholds, ranges: DayRange[]): Candidate[] {
     const raw: Candidate[] = [];
-    for (const dayStart of dayStartsUtc) {
-      const dayEnd = dayStart + 86400000;
-      let t = dayStart;
-      while (t < dayEnd) {
+    for (const range of ranges) {
+      if (!(range.endUtc > range.startUtc)) {
+        continue; // 非法或空区间直接跳过，不猜测 24 小时
+      }
+      let t = range.startUtc;
+      while (t < range.endUtc) {
         const pos = SolarCalc.position(t, goal.latWgs84, goal.lonWgs84);
         if (ReverseSearch.inTolerance(pos, goal)) {
           let bestT = t;
           let windowMs = COARSE_STEP_MS;
           for (const step of REFINE_STEPS) {
-            bestT = ReverseSearch.refineAt(goal, bestT, windowMs, step);
+            bestT = ReverseSearch.refineAt(goal, bestT, windowMs, step, range.startUtc, range.endUtc);
             windowMs = step * 2;
           }
           const bestPos = SolarCalc.position(bestT, goal.latWgs84, goal.lonWgs84);
@@ -107,5 +125,18 @@ export class ReverseSearch {
       return merged.slice(0, goal.maxResults);
     }
     return merged;
+  }
+
+  /**
+   * 兼容接口：按「本地日零点列表」搜索。
+   * 每个零点按 24 小时展开成区间，仅为旧调用方与既有测试保留；
+   * 接入真实本地日的调用方必须用 searchInRanges() 传 [startUtc, endUtc)。
+   */
+  static search(goal: SearchGoal, thresholds: LightThresholds, dayStartsUtc: number[]): Candidate[] {
+    const ranges: DayRange[] = [];
+    for (const dayStart of dayStartsUtc) {
+      ranges.push(DayRange.of(dayStart, dayStart + 86400000));
+    }
+    return ReverseSearch.searchInRanges(goal, thresholds, ranges);
   }
 }

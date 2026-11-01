@@ -21,6 +21,7 @@ const TROMSO_WINTER_DAY_START: number = Date.UTC(2026, 11, 20, 23, 0, 0);
 const TROMSO_SUMMER_DAY_START: number = Date.UTC(2026, 5, 20, 22, 0, 0);
 
 const MINUTE: number = 60000.0;
+const HOUR: number = 3600000.0;
 const TOLERANCE_MS: number = 3 * MINUTE;
 
 /** 断言两个时刻之差在容差内；任一为 -1 时直接失败 */
@@ -159,6 +160,107 @@ export default function solarEventsTest() {
       // 冬至特罗姆瑟太阳会落到 -6° 以下，因此蓝调时段存在
       expect(w.blueMorningStartUtc >= 0).assertTrue();
       expect(w.blueMorningStartUtc < w.blueMorningEndUtc).assertTrue();
+    });
+
+    it('solar_noon_not_shifted_by_23h_civil_day', 0, () => {
+      // 23 小时的民用日不能通过「减 23 小时」来纠正太阳正午。
+      // 该区间的中点落在 03-09，正午（≈17:06Z）正好在区间结束之后 6 分钟：
+      // 旧实现会把 03-09 的正午减 23 小时 → 03-08T18:06（比物理正午晚 1 小时）；
+      // 正确实现保留物理正午 03-09T17:06（只差 6 分钟到区间边界）。
+      const lat = 40.7128;
+      const lon = -74.006;
+      const dayStart = Date.UTC(2026, 2, 8, 18, 0, 0);
+      const dayEnd = dayStart + 23 * HOUR; // 2026-03-09T17:00Z
+      const ev = SolarCalc.events(dayStart, lat, lon, dayEnd);
+      // 正午只能贴近区间，不能被平移成另一个日内时刻
+      expect(Math.abs(ev.solarNoonUtc - dayEnd) <= 15 * MINUTE).assertTrue();
+      // 相邻太阳日的正午「日内时刻」几乎相同（EoT 日变化 < 1 分钟）；
+      // 若按日长平移，这里会相差整 1 小时。
+      const reference = SolarCalc.events(Date.UTC(2026, 2, 9, 0, 0, 0), lat, lon,
+        Date.UTC(2026, 2, 10, 0, 0, 0)).solarNoonUtc;
+      const sameTimeOfDay = Math.abs((ev.solarNoonUtc % 86400000) - (reference % 86400000));
+      expect(sameTimeOfDay < 2 * MINUTE).assertTrue();
+    });
+
+    it('solar_noon_not_shifted_by_25h_civil_day', 0, () => {
+      const lat = 40.7128;
+      const lon = -74.006;
+      const dayStart = Date.UTC(2026, 10, 1, 15, 30, 0);
+      const dayEnd = dayStart + 25 * HOUR; // 2026-11-02T16:30Z
+      const ev = SolarCalc.events(dayStart, lat, lon, dayEnd);
+      // 25 小时区间必然包含一个太阳正午：必须取区间内的物理正午
+      expect(ev.solarNoonUtc >= dayStart && ev.solarNoonUtc < dayEnd).assertTrue();
+      // 与 11-01 物理正午完全一致；旧实现按 −25h 平移会相差 1 小时
+      const reference = SolarCalc.events(Date.UTC(2026, 10, 1, 0, 0, 0), lat, lon,
+        Date.UTC(2026, 10, 2, 0, 0, 0)).solarNoonUtc;
+      expect(Math.abs(ev.solarNoonUtc - reference) < 2 * MINUTE).assertTrue();
+    });
+
+    it('events_stay_inside_real_23h_and_25h_bounds', 0, () => {
+      const lat = 40.7128;
+      const lon = -74.006;
+      // 纽约真实边界：春季 05:00Z → 次日 04:00Z（23h）；秋季 04:00Z → 次日 05:00Z（25h）
+      const springStart = Date.UTC(2026, 2, 8, 5, 0, 0);
+      const springEnd = Date.UTC(2026, 2, 9, 4, 0, 0);
+      const spring = SolarCalc.events(springStart, lat, lon, springEnd);
+      expect(springEnd - springStart).assertEqual(23 * HOUR);
+      expect(spring.solarNoonUtc >= springStart && spring.solarNoonUtc < springEnd).assertTrue();
+      expect(spring.sunriseUtc >= springStart && spring.sunriseUtc < springEnd).assertTrue();
+      expect(spring.sunsetUtc >= springStart && spring.sunsetUtc < springEnd).assertTrue();
+      expect(spring.civilDawnUtc >= springStart && spring.civilDuskUtc < springEnd).assertTrue();
+
+      const fallStart = Date.UTC(2026, 10, 1, 4, 0, 0);
+      const fallEnd = Date.UTC(2026, 10, 2, 5, 0, 0);
+      const fall = SolarCalc.events(fallStart, lat, lon, fallEnd);
+      expect(fallEnd - fallStart).assertEqual(25 * HOUR);
+      expect(fall.solarNoonUtc >= fallStart && fall.solarNoonUtc < fallEnd).assertTrue();
+      expect(fall.sunriseUtc >= fallStart && fall.sunriseUtc < fallEnd).assertTrue();
+      expect(fall.sunsetUtc >= fallStart && fall.sunsetUtc < fallEnd).assertTrue();
+    });
+
+    it('events_reject_invalid_day_end_without_assuming_24h', 0, () => {
+      const lat = 40.7128;
+      const lon = -74.006;
+      const dayStart = Date.UTC(2026, 2, 8, 5, 0, 0);
+      // dayEnd 早于等于 dayStart：非法区间，不得静默按 24 小时处理
+      const ev = SolarCalc.events(dayStart, lat, lon, dayStart);
+      expect(ev.sunriseUtc).assertEqual(-1);
+      expect(ev.sunsetUtc).assertEqual(-1);
+      expect(ev.civilDawnUtc).assertEqual(-1);
+      expect(ev.dayValid).assertFalse();
+    });
+
+    it('windows_stay_inside_real_bounds_23h_and_25h', 0, () => {
+      const lat = 40.7128;
+      const lon = -74.006;
+      const springStart = Date.UTC(2026, 2, 8, 5, 0, 0);
+      const springEnd = Date.UTC(2026, 2, 9, 4, 0, 0);
+      const spring = SolarCalc.lightWindows(springStart, lat, lon, LightThresholds.defaults(), springEnd);
+      expect(spring.goldenMorningStartUtc >= springStart).assertTrue();
+      expect(spring.goldenMorningEndUtc <= springEnd).assertTrue();
+      expect(spring.goldenEveningEndUtc <= springEnd).assertTrue();
+      if (spring.blueMorningStartUtc >= 0) {
+        expect(spring.blueMorningStartUtc >= springStart).assertTrue();
+        expect(spring.blueMorningEndUtc <= springEnd).assertTrue();
+      }
+
+      const fallStart = Date.UTC(2026, 10, 1, 4, 0, 0);
+      const fallEnd = Date.UTC(2026, 10, 2, 5, 0, 0);
+      const fall = SolarCalc.lightWindows(fallStart, lat, lon, LightThresholds.defaults(), fallEnd);
+      expect(fall.goldenMorningStartUtc >= fallStart).assertTrue();
+      expect(fall.goldenEveningEndUtc <= fallEnd).assertTrue();
+    });
+
+    it('pre_epoch_events_are_negative_but_not_sentinels', 0, () => {
+      // 1969-12-31 上海本地日：事件 UTC 是负数，不能被当成 -1 哨兵
+      const dayStart = Date.UTC(1969, 11, 30, 16, 0, 0); // 上海 1969-12-31 00:00
+      const dayEnd = Date.UTC(1969, 11, 31, 16, 0, 0);
+      const ev = SolarCalc.events(dayStart, 31.2304, 121.4737, dayEnd);
+      expect(ev.solarNoonUtc < 0).assertTrue();
+      expect(ev.solarNoonUtc >= dayStart && ev.solarNoonUtc < dayEnd).assertTrue();
+      expect(ev.sunriseUtc < 0).assertTrue();
+      expect(ev.sunriseUtc !== -1).assertTrue();
+      expect(ev.sunsetUtc > ev.sunriseUtc).assertTrue();
     });
 
     it('shanghai_normal_day_windows_ordered_and_bounded', 0, () => {

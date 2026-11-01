@@ -43,6 +43,7 @@ export struct HomePage {
   @State civilText: string = '--:--';
   @State polarText: string = '';
   @State dayStartUtc: number = 0;
+  @State dayEndUtc: number = 0;
   @State todayPlans: ShootPlan[] = [];
   @State locationHint: string = '';
   @State hasPlace: boolean = false;
@@ -60,6 +61,19 @@ export struct HomePage {
     return this.getUIContext().getHostContext() as common.UIAbilityContext;
   }
 
+  /** 用真实本地日边界（夏令时切换日可能是 23/25 小时）；不可用时置 0，界面按「无」处理 */
+  private applyDayBounds(tzId: string, utcMs: number): void {
+    const local = TimeUtil.toLocal(tzId, utcMs);
+    if (!local.valid) {
+      this.dayStartUtc = 0;
+      this.dayEndUtc = 0;
+      return;
+    }
+    const bounds = TimeUtil.localDayBounds(tzId, local.year, local.month, local.day);
+    this.dayStartUtc = bounds.valid ? bounds.startUtc : 0;
+    this.dayEndUtc = bounds.valid ? bounds.endUtc : 0;
+  }
+
   private async loadAll(): Promise<void> {
     try {
       this.errorText = '';
@@ -72,13 +86,13 @@ export struct HomePage {
         this.hasPlace = false;
         this.ready = true;
         this.tzId = AppState.effectiveTzId();
-        this.dayStartUtc = TimeUtil.startOfLocalDay(this.tzId, this.nowUtc);
+        this.applyDayBounds(this.tzId, this.nowUtc);
         return;
       }
       this.hasPlace = true;
       this.placeName = place.name;
       this.tzId = place.tzId;
-      this.dayStartUtc = TimeUtil.startOfLocalDay(place.tzId, this.nowUtc);
+      this.applyDayBounds(place.tzId, this.nowUtc);
       this.selectedUtc = this.nowUtc;
       const local = TimeUtil.toLocal(place.tzId, this.nowUtc);
       this.sliderMinutes = local.hour * 60 + local.minute;
@@ -104,7 +118,7 @@ export struct HomePage {
     this.phaseValue = phase;
     this.phaseLabel = SolarCalc.phaseLabel(phase);
 
-    const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84);
+    const ev: SolarEvents = SolarCalc.events(this.dayStartUtc, place.latWgs84, place.lonWgs84, this.dayEndUtc);
     this.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
     this.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
     this.civilText = ev.civilDuskUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.civilDuskUtc);
@@ -116,7 +130,8 @@ export struct HomePage {
       this.polarText = '';
     }
 
-    const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th);
+    const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th,
+      this.dayEndUtc);
     this.goldenAmText = w.goldenMorningStartUtc < 0 ? '无'
       : `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`;
     this.goldenPmText = w.goldenEveningStartUtc < 0 ? '无'

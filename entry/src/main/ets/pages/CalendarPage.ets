@@ -6,6 +6,7 @@ import { FontSize, Radius, Spacing, MIN_TOUCH, ThemeColors } from '../common/The
 import { Place, ShootPlan } from '../model/Models';
 import { SolarCalc, SolarEvents, LightWindow } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
+import { DayKind } from '../services/LocalTimeResolver';
 import { ExportService, ExportResult } from '../services/ExportService';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, SkeletonCard, Dialogs } from '../components/Widgets';
 
@@ -13,6 +14,7 @@ import { TopBar, EmptyState, ErrorCard, NoticeBar, StatusBadge, SkeletonCard, Di
 class DayCell {
   dayOfMonth: number = 0;
   dayStartUtc: number = 0;
+  dayEndUtc: number = 0;
   inMonth: boolean = true;
   hasGolden: boolean = false;
   planCount: number = 0;
@@ -104,11 +106,20 @@ export struct CalendarPage {
       const cell = new DayCell();
       cell.dayOfMonth = day;
       cell.inMonth = true;
-      cell.dayStartUtc = TimeUtil.fromLocal(place.tzId, this.year, this.month, day, 0, 0);
-      const ev: SolarEvents = SolarCalc.events(cell.dayStartUtc, place.latWgs84, place.lonWgs84);
+      const bounds = TimeUtil.localDayBounds(place.tzId, this.year, this.month, day);
+      cell.dayStartUtc = bounds.valid ? bounds.startUtc : 0;
+      cell.dayEndUtc = bounds.valid ? bounds.endUtc : 0;
+      if (!bounds.valid) {
+        // 3=该本地日期被整日跳过，4=时区数据不可用；两者都不把 NaN 传进 SolarCalc
+        cell.polarState = bounds.kind === DayKind.SKIPPED ? 3 : 4;
+      }
+      const ev: SolarEvents = SolarCalc.events(cell.dayStartUtc, place.latWgs84, place.lonWgs84,
+        cell.dayEndUtc);
       const w: LightWindow = SolarCalc.lightWindows(cell.dayStartUtc, place.latWgs84, place.lonWgs84,
-        AppState.thresholds());
-      cell.polarState = ev.polarState;
+        AppState.thresholds(), cell.dayEndUtc);
+      if (bounds.valid) {
+        cell.polarState = ev.polarState;
+      }
       cell.sunriseText = ev.sunriseUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunriseUtc);
       cell.sunsetText = ev.sunsetUtc < 0 ? '无' : TimeUtil.formatTime(place.tzId, ev.sunsetUtc);
       cell.solarNoonText = TimeUtil.formatTime(place.tzId, ev.solarNoonUtc);
@@ -211,7 +222,10 @@ export struct CalendarPage {
         }
         rows.push([`${this.year}-${String(this.month).padStart(2, '0')}-${String(cell.dayOfMonth).padStart(2, '0')}`,
           cell.sunriseText, cell.sunsetText, cell.solarNoonText, cell.goldenAm, cell.goldenPm,
-          `${cell.planCount}`, cell.polarState === 0 ? '正常' : (cell.polarState === 1 ? '极昼' : '极夜')]);
+          `${cell.planCount}`, cell.polarState === 0 ? '正常'
+            : (cell.polarState === 1 ? '极昼'
+              : (cell.polarState === 2 ? '极夜'
+                : (cell.polarState === 3 ? '日期不存在' : '时区数据不可用')))]);
       }
       const result = await ExportService.exportCsv(this.hostContext(),
         `lightbearing-${this.year}-${String(this.month).padStart(2, '0')}.csv`, rows);

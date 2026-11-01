@@ -55,6 +55,8 @@ export class SolarEvents {
   civilState: number = ThresholdState.CROSSING;
   nauticalState: number = ThresholdState.CROSSING;
   astronomicalState: number = ThresholdState.CROSSING;
+  /** 传入的民用日区间是否合法（dayEnd <= dayStart 时为 false，此时所有时间为 -1） */
+  dayValid: boolean = true;
 }
 
 /** 光线阶段枚举 */
@@ -92,6 +94,8 @@ export class LightWindow {
   blueMorningEndUtc: number = -1;
   blueEveningStartUtc: number = -1;
   blueEveningEndUtc: number = -1;
+  /** 传入的民用日区间是否合法（非法时所有窗口为 -1） */
+  dayValid: boolean = true;
 }
 
 export class SolarCalc {
@@ -213,42 +217,58 @@ export class SolarCalc {
   }
 
   /**
-   * 取锚点：把「本地日 00:00 对应的 UTC 时刻」换算成包含当地正午的那一天 UTC 零点。
-   * 必须这样做：NOAA 公式里的太阳正午是「UTC 零点之后 720-4λ-EoT 分钟」，
-   * 若直接用本地日零点，在高时区会整体偏移（例如东八区偏 8 小时）。
+   * 目标民用日内的太阳正午。
+   *
+   * 规则：优先取真正落在 [dayStart, dayEnd) 内的那个太阳正午；
+   * 若区间内没有（例如极端时区错配的人造区间），取距离区间最近的候选。
+   * 候选只来自相邻三个 UTC 日的物理正午（间隔恒为 24 小时），
+   * 绝不用民用日长度（23/25 小时）去平移。
    */
-  private static anchorOf(dayStartLocalUtc: number): number[] {
-    const localNoonGuess = dayStartLocalUtc + 43200000.0;
-    const utcMidnight = Math.floor(localNoonGuess / 86400000.0) * 86400000.0;
-    const t = SolarCalc.julianCentury(utcMidnight + 43200000.0);
-    const dm = SolarCalc.declinationAndEot(t);
-    return [utcMidnight, dm[0], dm[1]];
+  static solarNoonNear(dayStartUtc: number, dayEndUtc: number, lonDeg: number): number {
+    const midpoint = dayStartUtc + (dayEndUtc - dayStartUtc) / 2.0;
+    const baseMidnight = Math.floor(midpoint / 86400000.0) * 86400000.0;
+    let insideNoon = NaN;
+    let best = baseMidnight;
+    let bestDistance = Number.MAX_VALUE;
+    for (let k = -1; k <= 1; k++) {
+      const midnight = baseMidnight + k * 86400000.0;
+      const eotMin = SolarCalc.declinationAndEot(SolarCalc.julianCentury(midnight + 43200000.0))[1];
+      const noon = midnight + (720.0 - 4.0 * lonDeg - eotMin) * 60000.0;
+      if (noon >= dayStartUtc && noon < dayEndUtc) {
+        insideNoon = noon;
+      }
+      const distance = noon < dayStartUtc ? dayStartUtc - noon
+        : (noon >= dayEndUtc ? noon - dayEndUtc : 0);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = noon;
+      }
+    }
+    return Number.isNaN(insideNoon) ? best : insideNoon;
   }
 
   /**
    * 计算某日事件。
    * @param dayStartLocalUtc 目标本地日 00:00 对应的 UTC 时刻
-   * @param dayEndLocalUtc 目标本地日结束（次日 00:00 对应的 UTC 时刻）；-1 表示按 24 小时处理。
-   *        2B 会传入夏令时切换日的真实边界（当日可能不是 24 小时）。
+   * @param dayEndLocalUtc 目标本地日结束（次日 00:00 对应的 UTC 时刻）。
+   *        传 -1 表示旧调用的 24 小时默认值；显式传入但不大于起点时判为非法区间（dayValid=false），
+   *        不会静默按 24 小时处理。
    */
   static events(dayStartLocalUtc: number, latDeg: number, lonDeg: number,
     dayEndLocalUtc: number = -1): SolarEvents {
     const e = new SolarEvents();
-    const dayEnd = dayEndLocalUtc > dayStartLocalUtc ? dayEndLocalUtc : dayStartLocalUtc + 86400000.0;
-    const dayLength = dayEnd - dayStartLocalUtc;
-    const anchor = SolarCalc.anchorOf(dayStartLocalUtc);
-    const utcMidnight = anchor[0];
-    const decl = anchor[1];
-    const eotMin = anchor[2];
-    // 太阳正午（UTC 分钟，相对该 UTC 日零点）
-    const noonMinutes = 720.0 - 4.0 * lonDeg - eotMin;
-    let noon = utcMidnight + noonMinutes * 60000.0;
-    // 保证落在目标本地日区间内（跨日期线与极端经度）
-    if (noon < dayStartLocalUtc) {
-      noon += dayLength;
-    } else if (noon >= dayEnd) {
-      noon -= dayLength;
+    let dayEnd = dayStartLocalUtc + 86400000.0;
+    if (dayEndLocalUtc === -1) {
+      dayEnd = dayStartLocalUtc + 86400000.0;
+    } else if (dayEndLocalUtc > dayStartLocalUtc) {
+      dayEnd = dayEndLocalUtc;
+    } else {
+      e.dayValid = false;
+      return e;
     }
+    // 太阳正午由「区间内的物理正午」决定，民用日长度不参与太阳位置计算
+    const noon = SolarCalc.solarNoonNear(dayStartLocalUtc, dayEnd, lonDeg);
+    const decl = SolarCalc.declinationAndEot(SolarCalc.julianCentury(noon))[0];
     e.solarNoonUtc = noon;
     e.noonAltitudeDeg = 90.0 - Math.abs(latDeg - decl);
 
@@ -359,18 +379,18 @@ export class SolarCalc {
   static lightWindows(dayStartLocalUtc: number, latDeg: number, lonDeg: number,
     th: LightThresholds, dayEndLocalUtc: number = -1): LightWindow {
     const w = new LightWindow();
-    const dayEnd = dayEndLocalUtc > dayStartLocalUtc ? dayEndLocalUtc : dayStartLocalUtc + 86400000.0;
-    const dayLength = dayEnd - dayStartLocalUtc;
-    const anchor = SolarCalc.anchorOf(dayStartLocalUtc);
-    const utcMidnight = anchor[0];
-    const decl = anchor[1];
-    const eotMin = anchor[2];
-    let noonUtc = utcMidnight + (720.0 - 4.0 * lonDeg - eotMin) * 60000.0;
-    if (noonUtc < dayStartLocalUtc) {
-      noonUtc += dayLength;
-    } else if (noonUtc >= dayEnd) {
-      noonUtc -= dayLength;
+    let dayEnd = dayStartLocalUtc + 86400000.0;
+    if (dayEndLocalUtc === -1) {
+      dayEnd = dayStartLocalUtc + 86400000.0;
+    } else if (dayEndLocalUtc > dayStartLocalUtc) {
+      dayEnd = dayEndLocalUtc;
+    } else {
+      w.dayValid = false;
+      return w;
     }
+    // 与 events() 一致：正午由区间内的物理正午决定，民用日长度不参与平移
+    const noonUtc = SolarCalc.solarNoonNear(dayStartLocalUtc, dayEnd, lonDeg);
+    const decl = SolarCalc.declinationAndEot(SolarCalc.julianCentury(noonUtc))[0];
 
     // 蓝调带 [-6, goldenLower)，黄金带 [goldenLower, goldenUpper)
     const golden: number[] = SolarCalc.bandWindows(noonUtc, dayStartLocalUtc, dayEnd, latDeg, decl,

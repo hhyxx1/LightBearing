@@ -132,10 +132,22 @@ export default function timeZoneRealTest() {
       expect(transition.getMilliseconds()).assertEqual(Date.UTC(2026, 2, 8, 7, 0, 0));
       expect(transition.getOffsetBefore()).assertEqual(-5 * HOUR);
       expect(transition.getOffsetAfter()).assertEqual(-4 * HOUR);
-      // 豪勋爵岛：半小时夏令时，前后偏移差必须恰好 30 分钟
+
+      // 豪勋爵岛：2026 年第一次跳变是 4 月首个周日「回拨」，+11 → +10:30，差值为 −30 分钟。
+      // （原断言写成 +30 分钟是测试预期错误，不是解析实现问题。）
       const lhRules = i18n.getTimeZone('Australia/Lord_Howe').getZoneRules();
-      const lhTransition = lhRules.nextTransition(Date.UTC(2026, 0, 1, 0, 0, 0));
-      expect(lhTransition.getOffsetAfter() - lhTransition.getOffsetBefore()).assertEqual(HALF_HOUR);
+      const lhFallBack = lhRules.nextTransition(Date.UTC(2026, 0, 1, 0, 0, 0));
+      expect(lhFallBack.getMilliseconds()).assertEqual(Date.UTC(2026, 3, 4, 15, 0, 0));
+      expect(lhFallBack.getOffsetBefore()).assertEqual(11 * HOUR);
+      expect(lhFallBack.getOffsetAfter()).assertEqual(10 * HOUR + HALF_HOUR);
+      expect(lhFallBack.getOffsetAfter() - lhFallBack.getOffsetBefore()).assertEqual(-HALF_HOUR);
+
+      // 同年第二次跳变是 10 月首个周日「前跳」：+10:30 → +11，差值为 +30 分钟。
+      const lhSpringForward = lhRules.nextTransition(lhFallBack.getMilliseconds());
+      expect(lhSpringForward.getMilliseconds()).assertEqual(Date.UTC(2026, 9, 3, 15, 30, 0));
+      expect(lhSpringForward.getOffsetBefore()).assertEqual(10 * HOUR + HALF_HOUR);
+      expect(lhSpringForward.getOffsetAfter()).assertEqual(11 * HOUR);
+      expect(lhSpringForward.getOffsetAfter() - lhSpringForward.getOffsetBefore()).assertEqual(HALF_HOUR);
     });
 
     it('start_of_day_and_add_days_follow_real_bounds', 0, () => {
