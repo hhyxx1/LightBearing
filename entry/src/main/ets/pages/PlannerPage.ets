@@ -224,6 +224,29 @@ export struct PlannerPage {
     this.timeEdited = true;
   }
 
+  /**
+   * 切换机位：**保留原 UTC 时刻**，只按新机位的时区重算当地日期与时分。
+   * 同时作废旧机位遗留的 GAP/OVERLAP 待确认状态，避免把旧时区候选套到新机位。
+   */
+  private switchPlace(index: number): void {
+    if (index < 0 || index >= this.places.length || index === this.placeIndex) {
+      return;
+    }
+    this.selection = new PlanTimeSelection();
+    this.timeMessage = '';
+    this.overlapOpen = false;
+    this.overlapLabels = [];
+    this.placeIndex = index;
+    const place = this.places[index];
+    const local = TimeUtil.toLocal(place.tzId, this.selectedUtc);
+    if (!local.valid) {
+      this.timeMessage = `机位时区 ${place.tzId} 不可用，无法确定当地时间。`;
+      return;
+    }
+    // UTC 完全不动；只让日期选择器与新机位当地日期对齐
+    this.pickedDate = new Date(local.year, local.month - 1, local.day);
+  }
+
   private async savePlan(): Promise<void> {
     const place = this.currentPlace();
     if (place === undefined) {
@@ -414,7 +437,7 @@ export struct PlannerPage {
             .fontColor(this.placeIndex === index ? $r('app.color.lb_bg') : $r('app.color.lb_ink'))
             .fontSize(FontSize.CAPTION)
             .onClick(() => {
-              this.placeIndex = index;
+              this.switchPlace(index);
             })
         }, (place: Place) => place.id)
       }

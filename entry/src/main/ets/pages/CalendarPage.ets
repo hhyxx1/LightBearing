@@ -161,6 +161,43 @@ export struct CalendarPage {
     this.selectDay(this.selectedIndex);
   }
 
+  /**
+   * 状态短标记：不依赖颜色，用单字区分四种异常/特殊状态。
+   * 1=极昼 2=极夜 3=该当地日期不存在 4=时间数据不可用
+   */
+  private polarShort(state: number): string {
+    if (state === 1) {
+      return '昼';
+    }
+    if (state === 2) {
+      return '夜';
+    }
+    if (state === 3) {
+      return '无';
+    }
+    if (state === 4) {
+      return '缺';
+    }
+    return '';
+  }
+
+  /** 状态完整说明（无障碍文本 / 选中摘要 / 导出共用同一套措辞） */
+  private polarLabel(state: number): string {
+    if (state === 1) {
+      return '极昼';
+    }
+    if (state === 2) {
+      return '极夜';
+    }
+    if (state === 3) {
+      return '该当地日期不存在';
+    }
+    if (state === 4) {
+      return '时间数据不可用';
+    }
+    return '正常';
+  }
+
   private selectDay(index: number): void {
     if (index < 0 || index >= this.cells.length) {
       return;
@@ -172,7 +209,8 @@ export struct CalendarPage {
     this.selectedIndex = index;
     this.selectedGoldenAm = cell.goldenAm;
     this.selectedGoldenPm = cell.goldenPm;
-    this.selectedSummary = `${this.year}-${String(this.month).padStart(2, '0')}-${String(cell.dayOfMonth).padStart(2, '0')} · 日出 ${cell.sunriseText} · 日落 ${cell.sunsetText} · 正午 ${cell.solarNoonText}`;
+    const stateNote = cell.polarState === 0 ? '' : ` · ${this.polarLabel(cell.polarState)}`;
+    this.selectedSummary = `${this.year}-${String(this.month).padStart(2, '0')}-${String(cell.dayOfMonth).padStart(2, '0')} · 日出 ${cell.sunriseText} · 日落 ${cell.sunsetText} · 正午 ${cell.solarNoonText}${stateNote}`;
     const plans: ShootPlan[] = [];
     const place = AppState.currentPlace;
     if (place !== undefined) {
@@ -393,7 +431,9 @@ export struct CalendarPage {
                           Circle({ width: 5, height: 5 }).fill($r('app.color.lb_accent'))
                         }
                         if (cell.polarState !== 0) {
-                          Circle({ width: 5, height: 5 }).fill($r('app.color.lb_muted'))
+                          Text(this.polarShort(cell.polarState))
+                            .fontSize(9)
+                            .fontColor($r('app.color.lb_muted'))
                         }
                       }
                     }
@@ -405,7 +445,8 @@ export struct CalendarPage {
                     ? $r('app.color.lb_primary') : Color.Transparent)
                   .borderRadius(Radius.BUTTON)
                   .accessibilityText(cell.inMonth
-                    ? `${cell.dayOfMonth} 日，${cell.hasGolden ? '有黄金时刻，' : ''}${cell.planCount > 0 ? `计划 ${cell.planCount} 条` : '无计划'}`
+                    ? `${cell.dayOfMonth} 日，${this.polarLabel(cell.polarState)}，` +
+                      `${cell.hasGolden ? '有黄金时刻，' : ''}${cell.planCount > 0 ? `计划 ${cell.planCount} 条` : '无计划'}`
                     : '空白')
                   .onClick(() => {
                     this.selectDay(index);
