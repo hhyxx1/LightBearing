@@ -323,3 +323,23 @@ applyTempTestTime / tempReadout / tempEntryVisible / BuildProfile 引用 0 命�
 ```
 
 正式版本不含任何测试入口、调试按钮或绕过保存校验的捷径。
+
+## 第三次尝试（自动化：临时入口 → 验收 → 自动清理）
+
+用一次性脚本完成「打补丁 → 构建 → 安装 → 驱动 → 还原 → 重建 → 回归」，结果：
+
+| 步骤 | 输出 | 结论 |
+|---|---|---|
+| 临时入口构建 | `BUILD_TEMP True` | ✅ |
+| 计划数基线 | `2026-11-01 周日 02:09` 1 条 | ✅ |
+| 应用 01:30 | `OVERLAP cand=2026-11-01T05:30:00.000Z,2026-11-01T06:30:00.000Z chosen=-1` | ✅ |
+| 未选候选点保存 | 读数保持 `chosen=-1`（未推进保存） | ✅ |
+| 选候选1 | `utc=2026-11-01T05:30:00.000Z chosen=0` | ✅ 精确命中 |
+| 保存后回读 / 选候选2 | 列表抓取为空（`no-rows`），后续步骤未执行 | ⏸ 未取得证据 |
+| 自动清理 | `UNPATCH_MARKERS 0`，`REBUILD_CLEAN True` | ✅ |
+| 回归 | 宿主机 `99/99`；真机 `TimeZoneReal 12/12` | ✅ |
+
+`docs/screenshots/47_2b3c_chosen_first.jpeg` 为「选候选1 后 selectedUtc=05:30Z」的真机读数。
+
+**未验证清单（不变）**：选候选2 → 保存 → AppDb 回读 `06:30Z`；编辑第二次 01:30 不改时间的回读；
+原生 DatePicker/TimePicker 的真实手指操作（全程为注入，只证明「注入改显示值不触发 onChange」）。
