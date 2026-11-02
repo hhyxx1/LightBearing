@@ -1,6 +1,8 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { ReverseSearch, DayRange } from '../main/ets/services/ReverseSearch';
 import { SolarCalc, LightThresholds, SunPosition } from '../main/ets/services/SolarCalc';
+import { ReverseSearchKernel, SolarPositionEvaluator } from '../main/ets/services/ReverseSearchKernel';
+import { ShootWindow, KernelStats } from '../main/ets/model/ShootWindow';
 import { SearchGoal, Candidate } from '../main/ets/model/Models';
 
 /**
@@ -53,61 +55,105 @@ function refInTolerance(goal: SearchGoal, utcMs: number): boolean {
   return azErr <= goal.azTolerance && altErr <= goal.altTolerance;
 }
 
+
+/** 合成轨迹：高度为抛物线，方位恒定（用于验证极短窗口被发现） */
+class ParabolaAltEvaluator implements SolarPositionEvaluator {
+  private tBase: number = 0;
+
+  constructor(tBase: number) {
+    this.tBase = tBase;
+  }
+
+  positionAt(utcMs: number, latDeg: number, lonDeg: number): SunPosition {
+    const p = new SunPosition();
+    const u = (utcMs - this.tBase) / 1000;
+    p.azimuthDeg = 200;
+    p.altitudeDeg = 10 - u * u;
+    return p;
+  }
+}
+
+/** 合成轨迹：两个独立的有效凸瓣（间隔可调） */
+class TwoLobesEvaluator implements SolarPositionEvaluator {
+  private t1: number = 0;
+  private t2: number = 0;
+
+  constructor(t1: number, t2: number) {
+    this.t1 = t1;
+    this.t2 = t2;
+  }
+
+  positionAt(utcMs: number, latDeg: number, lonDeg: number): SunPosition {
+    const p = new SunPosition();
+    const d1 = Math.abs(utcMs - this.t1);
+    const d2 = Math.abs(utcMs - this.t2);
+    const d = Math.min(d1, d2) / 1000;
+    p.azimuthDeg = 200;
+    p.altitudeDeg = 10 - d * 0.01;
+    return p;
+  }
+}
+
+/** 合成轨迹：方位误差随时间增大、高度误差随时间减小（D2 的 trade-off 场景） */
+class TradeoffEvaluator implements SolarPositionEvaluator {
+  private tBase: number = 0;
+
+  constructor(tBase: number) {
+    this.tBase = tBase;
+  }
+
+  positionAt(utcMs: number, latDeg: number, lonDeg: number): SunPosition {
+    const p = new SunPosition();
+    const u = (utcMs - this.tBase) / 1000;
+    p.azimuthDeg = 180 + 0.4 + 0.2 * (u / 60);
+    p.altitudeDeg = 10 + 4.5 * (1 - u / 60);
+    return p;
+  }
+}
+
 export default function reverseSearchBaselineTest() {
   describe('ReverseSearchBaseline', () => {
-    it('defect_short_window_between_coarse_samples_is_missed', 0, () => {
-      // 缺陷 A（漏报）：真实有效窗口只有几十秒，且落在两个五分钟采样点之间。
-      // 复现：目标取自 上海 2026-10-30 本地日 + 2.5 分钟（不在 5 分钟格点上），容差 0.05°。
-      // 参考结果（1 秒扫描）：窗口约 [t0-16s, t0+16s]，全程有效。
-      // 旧实现：t0±150s 的采样点均超出容差 → 不进入细化 → 返回空。
+    it('finds_32s_window_between_old_coarse_samples', 0, () => {
+      // 2C-1 的漏报反例：窗口只有 32 秒且落在旧版两个 5 分钟采样点之间。
+      // 旧实现返回空；新内核必须找到，且窗口必须真的包含目标瞬间。
       const t0: number = SH_START + 2.5 * MIN;
       const goal = goalFromInstant(SH_LAT, SH_LON, t0, 0.05, 0.05);
-      // 参考扫描：t0 本身有效、两侧 150 秒的采样点无效
-      expect(refInTolerance(goal, t0)).assertTrue();
+      const stats = new KernelStats();
+      const windows: ShootWindow[] = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+        [DayRange.of(SH_START, SH_END)], stats);
+      expect(windows.length).assertEqual(1);
+      const w = windows[0];
+      expect(w.valid).assertTrue();
+      expect(w.startUtc <= t0 && t0 < w.endUtc).assertTrue();
+      // 窗口两端都必须是真实有效时刻（1 秒分辨率内的近似）
+      expect(refInTolerance(goal, w.startUtc)).assertTrue();
+      expect(refInTolerance(goal, w.bestUtc)).assertTrue();
+      // 旧版会在 16:00:00 / 16:05:00 两个采样点上失败（这就是它漏报的原因）
       expect(refInTolerance(goal, t0 - 2.5 * MIN)).assertFalse();
       expect(refInTolerance(goal, t0 + 2.5 * MIN)).assertFalse();
-      // 生产实现返回空 —— 这就是漏报
-      const found: Candidate[] = ReverseSearch.searchInRanges(goal, LightThresholds.defaults(),
-        [DayRange.of(SH_START, SH_END)]);
-      expect(found.length).assertEqual(0);
+      // 窗口长度应在几十秒量级，而不是被粗采样拉长
+      expect(w.durationMs() <= 200 * 1000).assertTrue();
     });
 
-    it('defect_wide_tolerance_produces_duplicate_candidates_for_one_window', 0, () => {
-      // 缺陷 C（重复候选）：容差放宽后有效窗口很长，粗扫命中后每次跳 10 分钟，
-      // 相邻两次细化的最优点相隔 > 10 分钟，于是 10 分钟合并规则不再生效，
-      // 同一个连续窗口被切成多个候选。
-      let dupCases = 0;
-      let sample = '';
-      for (let k = 0; k < 48; k++) {
-        const t0: number = SH_START + k * 30 * MIN + 2.5 * MIN;
-        const goal = goalFromInstant(SH_LAT, SH_LON, t0, 6, 6);
-        const found: Candidate[] = ReverseSearch.searchInRanges(goal, LightThresholds.defaults(),
-          [DayRange.of(SH_START, SH_END)]);
-        for (let i = 1; i < found.length; i++) {
-          const gap = found[i].utcMs - found[i - 1].utcMs;
-          if (gap <= 0 || gap <= 10 * MIN) {
-            continue;
-          }
-          // 两点之间逐 10 秒抽样：若持续有效，说明它们属于同一个连续窗口
-          let continuous = true;
-          const step = 10 * 1000;
-          for (let t = found[i - 1].utcMs + step; t < found[i].utcMs; t += step) {
-            if (!refInTolerance(goal, t)) {
-              continuous = false;
-              break;
-            }
-          }
-          if (continuous) {
-            dupCases++;
-            if (sample.length === 0) {
-              sample = `k=${k} gap=${Math.round(gap / MIN)}min`;
-            }
-            break;
-          }
+    it('wide_tolerance_returns_one_window_not_duplicates', 0, () => {
+      // 旧版在宽容差下会把同一连续窗口切成多条候选（10 分钟合并失效）。
+      // 新内核按窗口身份去重：候选数必须等于窗口数。
+      const t0: number = SH_START + 12 * HOUR;
+      const goal = goalFromInstant(SH_LAT, SH_LON, t0, 6, 6);
+      const stats = new KernelStats();
+      const windows = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+        [DayRange.of(SH_START, SH_END)], stats);
+      const candidates: Candidate[] = ReverseSearch.searchInRanges(goal, LightThresholds.defaults(),
+        [DayRange.of(SH_START, SH_END)]);
+      expect(windows.length >= 1).assertTrue();
+      expect(candidates.length).assertEqual(windows.length);
+      // 每个候选的唯一来源窗口互不相同（窗口之间互不包含）
+      for (let i = 0; i < windows.length; i++) {
+        for (let j = i + 1; j < windows.length; j++) {
+          const overlap = windows[i].startUtc < windows[j].endUtc && windows[j].startUtc < windows[i].endUtc;
+          expect(overlap).assertFalse();
         }
       }
-      expect(dupCases > 0).assertTrue();
-      expect(sample.length > 0).assertTrue();
     });
 
     it('defect_cost_minimum_can_fall_outside_one_tolerance', 0, () => {
@@ -217,6 +263,120 @@ export default function reverseSearchBaselineTest() {
       for (const c of found) {
         const p: SunPosition = SolarCalc.position(c.utcMs, SH_LAT, SH_LON);
         expect(SolarCalc.angularDistance(p.azimuthDeg, 0) <= 3).assertTrue();
+      }
+    });
+
+    it('synthetic_5s_10s_20s_windows_are_found', 0, () => {
+      // 合成轨迹：alt = 10 - (秒差)^2，方位恒定 → 有效窗口宽度由 altTol 精确决定
+      const base = Date.UTC(2026, 9, 29, 18, 0, 0);
+      for (const widthSec of [5, 10, 20]) {
+        const half = widthSec / 2;
+        ReverseSearchKernel.setEvaluator(new ParabolaAltEvaluator(base));
+        try {
+          const goal = new SearchGoal();
+          goal.latWgs84 = 0;
+          goal.lonWgs84 = 0;
+          goal.azimuthTarget = 200;
+          goal.altitudeTarget = 10;
+          goal.azTolerance = 1;
+          goal.altTolerance = half * half;
+          goal.daylightOnly = false;
+          goal.maxResults = 30;
+          const stats = new KernelStats();
+          const windows = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+            [DayRange.of(base - 10 * MIN, base + 10 * MIN)], stats);
+          expect(windows.length).assertEqual(1);
+          const w = windows[0];
+          expect(w.valid).assertTrue();
+          // 1 秒分辨率下窗口宽度误差不超过 2 秒
+          expect(Math.abs(w.durationMs() / 1000 - widthSec) <= 2).assertTrue();
+          expect(w.startUtc <= base && base < w.endUtc).assertTrue();
+        } finally {
+          ReverseSearchKernel.setEvaluator(undefined);
+        }
+      }
+    });
+
+    it('synthetic_two_windows_10s_apart_stay_separate', 0, () => {
+      // 两个独立凸瓣：各自 ±5 秒有效，中间 10 秒无效 → 必须返回两个窗口，不能合并
+      const t1 = Date.UTC(2026, 9, 29, 18, 0, 0);
+      const t2 = t1 + 20 * 1000;
+      ReverseSearchKernel.setEvaluator(new TwoLobesEvaluator(t1, t2));
+      try {
+        const goal = new SearchGoal();
+        goal.latWgs84 = 0;
+        goal.lonWgs84 = 0;
+        goal.azimuthTarget = 200;
+        goal.altitudeTarget = 10;
+        goal.azTolerance = 1;
+        goal.altTolerance = 0.05;
+        goal.daylightOnly = false;
+        goal.maxResults = 30;
+        const stats = new KernelStats();
+        const windows = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+          [DayRange.of(t1 - 10 * MIN, t2 + 10 * MIN)], stats);
+        expect(windows.length).assertEqual(2);
+        const gapMs = windows[1].startUtc - windows[0].endUtc;
+        expect(gapMs >= 8000 && gapMs <= 12000).assertTrue();
+        expect(windows[0].endUtc <= windows[1].startUtc).assertTrue();
+      } finally {
+        ReverseSearchKernel.setEvaluator(undefined);
+      }
+    });
+
+    it('synthetic_tangent_hit_is_degenerate_window', 0, () => {
+      // 只在一瞬间刚好等于目标（切点）：必须得到一个退化窗口，而不是零长度被丢弃
+      const base = Date.UTC(2026, 9, 29, 18, 0, 0);
+      ReverseSearchKernel.setEvaluator(new ParabolaAltEvaluator(base));
+      try {
+        const goal = new SearchGoal();
+        goal.latWgs84 = 0;
+        goal.lonWgs84 = 0;
+        goal.azimuthTarget = 200;
+        goal.altitudeTarget = 10;
+        goal.azTolerance = 1;
+        goal.altTolerance = 0;
+        goal.daylightOnly = false;
+        goal.maxResults = 30;
+        const windows = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+          [DayRange.of(base - 2 * MIN, base + 2 * MIN)], new KernelStats());
+        expect(windows.length).assertEqual(1);
+        expect(windows[0].degenerate).assertTrue();
+        expect(windows[0].durationMs() <= 2000).assertTrue();
+      } finally {
+        ReverseSearchKernel.setEvaluator(undefined);
+      }
+    });
+
+    it('synthetic_invalid_lower_cost_point_does_not_remove_valid_window', 0, () => {
+      // D2：u=0 处 (azErr 0.40, altErr 4.50) 有效但 cost 4.90；
+      // u=60 处 (azErr 0.60, altErr 0.10) 无效却 cost 0.70。
+      // 新内核只在有效集合内部选最优点，因此窗口必须存在且最优点满足双容差。
+      const tBase = Date.UTC(2026, 9, 29, 18, 0, 0);
+      ReverseSearchKernel.setEvaluator(new TradeoffEvaluator(tBase));
+      try {
+        const goal = new SearchGoal();
+        goal.latWgs84 = 0;
+        goal.lonWgs84 = 0;
+        goal.azimuthTarget = 180;
+        goal.altitudeTarget = 10;
+        goal.azTolerance = 0.5;
+        goal.altTolerance = 5;
+        goal.daylightOnly = false;
+        goal.maxResults = 30;
+        const windows = ReverseSearch.searchWindowsInRanges(goal, LightThresholds.defaults(),
+          [DayRange.of(tBase - 60 * 1000, tBase + 120 * 1000)], new KernelStats());
+        expect(windows.length >= 1).assertTrue();
+        for (const w of windows) {
+          // 最优点必须真的满足两个独立容差
+          const azAtBest = Math.abs(Math.abs(w.bestAzimuth - 180));
+          expect(azAtBest <= 0.5).assertTrue();
+          expect(Math.abs(w.bestAltitude - 10) <= 5).assertTrue();
+          // 且不能落在 u=60 那个「cost 更低但无效」的点上
+          expect(Math.abs(w.bestUtc - (tBase + 60000)) > 1000).assertTrue();
+        }
+      } finally {
+        ReverseSearchKernel.setEvaluator(undefined);
       }
     });
   });
