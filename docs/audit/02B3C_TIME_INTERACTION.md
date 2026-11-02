@@ -199,6 +199,22 @@ class SliderMapping {
 真机：-s class TimeZoneReal → Tests run: 11, Failure: 0, Pass: 11
 ```
 
+## D2. 追加的真机证据：计划保存路径
+
+轨迹页「把此刻存为拍摄计划」在 TEST-纽约 / 2026-11-01 02:09（UTC-05:00，即 07:09Z）
+成功保存计划，计划列表显示 `2026-11-01 周日 02:09 · 目标 62° / -48°`
+（`docs/screenshots/43_2b3c_plan_ny_0209.jpeg`），说明重复小时内的第二次时刻可以正常落库。
+计划列表始终按**计划自身机位时区**显示，切换当前机位不会改变该计划的时间显示——这是既有设计，
+不是 UTC 被改写。
+
+## D3. 时间滚轮自动化的确切阻塞点
+
+实测结论（比此前"不稳定"更具体）：用 `uitest uiInput` 点击或滑动 `TimePicker` 的可见行，
+**控件显示值会变**（例如显示 01:30 / 01:46），但 `onChange` 不触发，
+因此 `applyLocalDateTime()` 从未执行 → `timeMessage` 与候选按钮不会出现，`timeEdited` 也不会置位。
+这正是 Planner 的 GAP 提示与 OVERLAP 候选面板无法通过注入脚本验证的原因，属**自动化能力限制**，
+代码路径本身由宿主机单测覆盖（`gap_time_cannot_be_saved`、`overlap_requires_explicit_choice`）。
+
 ## E. 未解决 / 未验证
 
 1. 春季前跳（2026-03-08）与 Planner 的 GAP/OVERLAP 交互**尚未在真机上点过**，仅有单测覆盖（`gap_time_cannot_be_saved`、`overlap_requires_explicit_choice`）。
