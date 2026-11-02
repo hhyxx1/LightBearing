@@ -5,6 +5,7 @@ import reverseSearchTest from './ReverseSearch.test';
 import csvCodecTest from './CsvCodec.test';
 import timelineTest from './Timeline.test';
 import timeSelectionTest from './TimeSelection.test';
+import reverseSearchBaselineTest from './ReverseSearchBaseline.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -14,4 +15,5 @@ export default function testsuite() {
   csvCodecTest();
   timelineTest();
   timeSelectionTest();
+  reverseSearchBaselineTest();
 }
