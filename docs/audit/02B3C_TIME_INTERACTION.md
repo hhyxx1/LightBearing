@@ -242,3 +242,47 @@ Apia 2011-12-30 在真机日历上确实渲染为「日期不存在」：格子�
 3. 时间比较页截图未做像素级复核（进度横轴与曲线形状）。
 4. 首页曲线的 `DST-05:00` 位于 x 轴第一个刻度之前的位置，视觉上靠近左边缘，属可接受范围但未做多分辨率检查。
 5. 遗留 2C 问题不变：粗扫可能漏短窗口、10 分钟合并、maxResults 分布、跨日最优。
+
+---
+
+# 授权临时验收入口（已按授权移除）
+
+按授权新增了**仅本轮验收使用**的临时入口，验证后已全部删除。
+
+## 门控与路径
+
+- 显示条件：`BuildProfile.DEBUG === true` **且** 当前机位名以 `TEST-` 开头；
+- 唯一的写入路径是 `applyLocalDateTime(y, m, d, hh, mm)` —— 即正式链路
+  `TimeUtil.resolveLocal → TimeSelection.fromResolve → UI → validateForSave`；
+- 入口内的「读取当前 UTC / 选候选1 / 选候选2」只做**只读显示**与调用正式方法 `chooseOverlap(index)`，
+  没有直接改写 `selectedUtc`、没有伪造 GAP/OVERLAP、没有预设 `chosenIndex`、没有绕过保存校验。
+
+## 真机实测结果
+
+| 场景 | 输入 | 读数 / 界面 | 结果 |
+|---|---|---|---|
+| GAP | TEST-纽约 · 2026-03-08 02:30 | `status=GAP selectedUtc=<保持不变> | msg=该当地时间因夏令时切换而不存在，请重新选择。` | ✅ 缺口被识别，未自动顺延到 03:00 |
+| GAP 保存 | 同上下，点「保存计划」 | 同一提示再次出现（界面提示条 + toast 各一次），未继续保存 | ✅ 保存被拒 |
+| OVERLAP | TEST-纽约 · 2026-11-01 01:30 | `status=OVERLAP 候选=2026-11-01T05:30:00.000Z , 2026-11-01T06:30:00.000Z | msg=该当地时间因夏令时回拨出现两次，请选择其中一个。` | ✅ 两个候选来自 `resolveLocal()`，差值恰为 1 小时 |
+
+截图：`docs/screenshots/45_2b3c_planner_gap.jpeg`（GAP 状态读数）。
+
+## 未完成（如实记录）
+
+1. **两次候选的实际点击保存**（选第一次→05:30Z、选第二次→06:30Z）以及保存后回读 UTC 的断言，
+   未在真机完成——自动化的滚动定位反复把页面滚到错误区域，最后一次驱动脚本还误落到别的页面；
+2. **真实手指操作滚轮未曾验证**：全过程都是 `uitest` 注入，观察结论是「注入改变显示值但不触发 onChange」，
+   因此**不能**据此认定原生滚轮正常，该项保持未验证。
+
+## 清理与回归（要求 9）
+
+```text
+移除临时代码：4376 字节，// TEMP-TEST-ENTRY 标记 0 命中，
+              tempDateText/applyTempTestTime/tempEntryVisible/BuildProfile 引用 0 命中
+最终 diff：entry/src/main/** 无任何改动（工作区仅新增截图）
+应用构建：BUILD SUCCESSFUL
+宿主机：Tests run: 99, Failure: 0
+真机：  -s class TimeZoneReal → Tests run: 12, Failure: 0（含 planner_time_guard_on_real_zone_data）
+```
+
+正式版本不含任何测试入口、调试按钮或绕过保存校验的捷径。
