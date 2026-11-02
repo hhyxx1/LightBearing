@@ -4,6 +4,7 @@ import { TimeUtil } from '../../../main/ets/services/TimeUtil';
 import { DayKind, LocalDayBounds, LocalResolveResult, LocalResolveStatus } from '../../../main/ets/services/LocalTimeResolver';
 import { Timeline, TimelineModel } from '../../../main/ets/services/Timeline';
 import { TimelineLabels, TimelineTick } from '../../../main/ets/services/TimelineLabels';
+import { PlanTimeSelection, SaveCheck, TimeSelection } from '../../../main/ets/services/TimeSelection';
 
 /**
  * 真实 IANA 时区的设备侧测试。
@@ -213,6 +214,41 @@ export default function timeZoneRealTest() {
         expect(t.utcMs < 0).assertTrue();
         expect(t.label !== '--:--').assertTrue();
       }
+    });
+
+
+    it('planner_time_guard_on_real_zone_data', 0, () => {
+      // GAP：纽约 2026-03-08 02:30 不存在 → 决策为 GAP，保存必须被拒
+      const gapResult = TimeUtil.resolveLocal('America/New_York', 2026, 3, 8, 2, 30);
+      expect(gapResult.status).assertEqual(LocalResolveStatus.GAP);
+      const gapSel: PlanTimeSelection = TimeSelection.fromResolve(gapResult);
+      expect(gapSel.isResolved()).assertFalse();
+      expect(gapSel.message.length > 0).assertTrue();
+      const gapBounds = TimeUtil.localDayBounds('America/New_York', 2026, 3, 8);
+      const gapCheck: SaveCheck = TimeSelection.validateForSave(gapBounds.startUtc, gapBounds.startUtc,
+        gapBounds.endUtc, 40.7128, -74.006, true, gapSel);
+      expect(gapCheck.ok).assertFalse();
+
+      // OVERLAP：纽约 2026-11-01 01:30 两个候选，未选择前禁止保存
+      const overlapResult = TimeUtil.resolveLocal('America/New_York', 2026, 11, 1, 1, 30);
+      expect(overlapResult.status).assertEqual(LocalResolveStatus.OVERLAP);
+      const sel: PlanTimeSelection = TimeSelection.fromResolve(overlapResult);
+      expect(sel.isResolved()).assertFalse();
+      const bounds = TimeUtil.localDayBounds('America/New_York', 2026, 11, 1);
+      expect(bounds.durationMs).assertEqual(25 * HOUR);
+      expect(TimeSelection.validateForSave(sel.candidatesUtc[0], bounds.startUtc, bounds.endUtc,
+        40.7128, -74.006, true, sel).ok).assertFalse();
+      // 选第一次 → 05:30Z
+      expect(TimeSelection.choose(sel, 0)).assertEqual(Date.UTC(2026, 10, 1, 5, 30, 0));
+      expect(TimeSelection.validateForSave(sel.utcMs(), bounds.startUtc, bounds.endUtc,
+        40.7128, -74.006, true, sel).ok).assertTrue();
+      // 选第二次 → 06:30Z
+      expect(TimeSelection.choose(sel, 1)).assertEqual(Date.UTC(2026, 10, 1, 6, 30, 0));
+      expect(TimeSelection.validateForSave(sel.utcMs(), bounds.startUtc, bounds.endUtc,
+        40.7128, -74.006, true, sel).ok).assertTrue();
+      // 编辑已有计划未改时间：保留原 UTC 也能通过校验
+      expect(TimeSelection.validateForSave(Date.UTC(2026, 10, 1, 6, 30, 0), bounds.startUtc,
+        bounds.endUtc, 40.7128, -74.006, true, null).ok).assertTrue();
     });
 
     it('start_of_day_and_add_days_follow_real_bounds', 0, () => {

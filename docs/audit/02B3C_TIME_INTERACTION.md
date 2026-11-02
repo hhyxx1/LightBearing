@@ -212,8 +212,22 @@ class SliderMapping {
 实测结论（比此前"不稳定"更具体）：用 `uitest uiInput` 点击或滑动 `TimePicker` 的可见行，
 **控件显示值会变**（例如显示 01:30 / 01:46），但 `onChange` 不触发，
 因此 `applyLocalDateTime()` 从未执行 → `timeMessage` 与候选按钮不会出现，`timeEdited` 也不会置位。
-这正是 Planner 的 GAP 提示与 OVERLAP 候选面板无法通过注入脚本验证的原因，属**自动化能力限制**，
-代码路径本身由宿主机单测覆盖（`gap_time_cannot_be_saved`、`overlap_requires_explicit_choice`）。
+这正是 Planner 的 GAP 提示与 OVERLAP 候选面板无法通过注入脚本验证的原因，属**自动化能力限制**。
+方向键（`keyEvent` 2013）同样无法驱动滚轮。
+
+为把「逻辑正确性」从「界面点击」里分离出来，新增**设备侧**用例
+`planner_time_guard_on_real_zone_data`（真实 i18n 时区数据）：
+
+| 断言 | 结果 |
+|---|---|
+| 纽约 2026-03-08 02:30 → `resolveLocal` 为 `GAP`，`isResolved()` 为 false | ✅ |
+| GAP 状态下 `validateForSave` 返回 `ok=false`（不会落库） | ✅ |
+| 纽约 2026-11-01 01:30 → `OVERLAP`，未选择前 `validateForSave` 拒绝 | ✅ |
+| 选第一次 → `05:30Z`，校验通过；选第二次 → `06:30Z`，校验通过 | ✅ |
+| 编辑已有计划（selection=null，原 UTC 06:30Z）→ 校验通过，不覆盖原时间 | ✅ |
+
+**结论**：GAP/OVERLAP 的判定与保存守卫已在真机真实时区数据上验证；仍未验证的只剩
+「候选按钮/提示文本在界面上的渲染」这一步，需要手动拨动时间滚轮或临时调试入口。
 
 ## D4. D 场景结论
 
