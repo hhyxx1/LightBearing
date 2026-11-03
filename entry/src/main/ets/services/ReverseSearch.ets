@@ -1,7 +1,7 @@
 import { SolarCalc, SunPosition, LightThresholds } from './SolarCalc';
 import { Candidate, SearchGoal } from '../model/Models';
 import { DayKind, LocalDayBounds } from './LocalTimeResolver';
-import { ReverseSearchKernel } from './ReverseSearchKernel';
+import { ReverseSearchKernel, KernelContext, KernelRunner, SolarPositionEvaluator } from './ReverseSearchKernel';
 import { ShootWindow, KernelStats } from '../model/ShootWindow';
 
 /**
@@ -26,6 +26,26 @@ export class DayRange {
     r.endUtc = endUtc;
     return r;
   }
+}
+
+/** 结果排序模式 */
+export class WindowSortMode {
+  /** 模式 A：全局最精确匹配（默认） */
+  static readonly BEST: number = 0;
+  /** 模式 B：时间分布优先（可选策略，UI 暂不启用） */
+  static readonly DISTRIBUTION: number = 1;
+}
+
+/** 全局窗口搜索结果 */
+export class SearchOutcome {
+  windows: ShootWindow[] = [];
+  /** 截断前的窗口总数 */
+  totalBeforeCut: number = 0;
+  stats: KernelStats = new KernelStats();
+  /** 空字符串表示成功；非空为拒绝原因 */
+  errorText: string = '';
+  /** 是否未跑完（取消/预算耗尽） */
+  incomplete: boolean = false;
 }
 
 /**
@@ -128,5 +148,158 @@ export class ReverseSearch {
       ranges.push(DayRange.of(dayStart, dayStart + 86400000));
     }
     return ReverseSearch.searchInRanges(goal, thresholds, ranges);
+  }
+
+  /**
+   * 全局窗口后处理（2C-3）：跨区间衔接 + 去重 + 统一评分 + 有界 Top-K。
+   *
+   * - 相邻区间的窗口若在 UTC 上真正相接（无真实时间缺口）则合并为同一窗口；
+   *   被跳过/不可用的日期会形成真实缺口，因此不会被跨空白合并；
+   * - 合并后边界变化，best 点会用同一套内核重新求并**再次校验双容差**；
+   * - 评分统一为归一化相对误差 `azErr/azTol + altErr/altTol`（零容差按 1 处理），
+   *   同分按 bestUtc 升序，保证可复现；
+   * - 截断使用有界插入，不会在排序第二遍之前丢掉可能进入 Top-K 的窗口。
+   */
+  static finalizeWindows(goal: SearchGoal, thresholds: LightThresholds, raw: ShootWindow[],
+    mode: number, maxResults: number, evaluator?: SolarPositionEvaluator,
+    stats?: KernelStats, ranges?: DayRange[]): SearchOutcome {
+    const out = new SearchOutcome();
+    out.stats = stats !== undefined ? stats : new KernelStats();
+    if (!Number.isInteger(maxResults) || maxResults < 1 || maxResults > 1000) {
+      out.errorText = 'maxResults 必须是 1–1000 的整数';
+      return out;
+    }
+    const sorted = raw.slice();
+    sorted.sort((a: ShootWindow, b: ShootWindow) => a.startUtc - b.startUtc);
+    // 跨区间衔接：只在真正相接/重叠时合并（缺口绝不跨过）
+    const merged: ShootWindow[] = [];
+    for (const w of sorted) {
+      if (!w.valid) {
+        continue;
+      }
+      const last = merged.length > 0 ? merged[merged.length - 1] : undefined;
+      if (last !== undefined && w.startUtc <= last.endUtc + 1) {
+        last.endUtc = Math.max(last.endUtc, w.endUtc);
+        last.valid = false; // 边界变了，需要重新求 best
+      } else {
+        const copy = new ShootWindow();
+        copy.startUtc = w.startUtc;
+        copy.endUtc = w.endUtc;
+        copy.bestUtc = w.bestUtc;
+        copy.bestAzimuth = w.bestAzimuth;
+        copy.bestAltitude = w.bestAltitude;
+        copy.bestAzError = w.bestAzError;
+        copy.bestAltError = w.bestAltError;
+        copy.phase = w.phase;
+        copy.valid = true;
+        copy.degenerate = w.degenerate;
+        merged.push(copy);
+      }
+    }
+    const ctx = new KernelContext(goal, thresholds, evaluator, out.stats);
+    const runner = new KernelRunner(ctx);
+    const finalWindows: ShootWindow[] = [];
+    for (const w of merged) {
+      if (!w.valid) {
+        const rechecked = runner.makeWindow(w.startUtc, w.endUtc);
+        if (rechecked.valid) {
+          finalWindows.push(rechecked);
+        }
+        continue;
+      }
+      // 未合并的窗口也再校验一次（best 必须在窗口内且双容差成立）
+      if (w.bestUtc < w.startUtc || w.bestUtc >= w.endUtc) {
+        const rechecked = runner.makeWindow(w.startUtc, w.endUtc);
+        if (rechecked.valid) {
+          finalWindows.push(rechecked);
+        }
+        continue;
+      }
+      finalWindows.push(w);
+    }
+    out.totalBeforeCut = finalWindows.length;
+    const scoreOf = (w: ShootWindow): number => {
+      const azScale = goal.azTolerance > 0 ? goal.azTolerance : 1;
+      const altScale = goal.altTolerance > 0 ? goal.altTolerance : 1;
+      return w.bestAzError / azScale + w.bestAltError / altScale;
+    };
+    const better = (a: ShootWindow, b: ShootWindow): boolean => {
+      const ca = scoreOf(a);
+      const cb = scoreOf(b);
+      if (ca !== cb) {
+        return ca < cb;
+      }
+      return a.bestUtc < b.bestUtc;
+    };
+    if (mode === WindowSortMode.DISTRIBUTION) {
+      // 模式 B：按所属区间（本地日）分组后轮流取，保证不同日期都有机会
+      const groupOf = (w: ShootWindow): number => {
+        const rs = ranges;
+        if (rs === undefined) {
+          return 0;
+        }
+        for (let i = 0; i < rs.length; i++) {
+          if (w.startUtc >= rs[i].startUtc && w.startUtc < rs[i].endUtc) {
+            return i;
+          }
+        }
+        return rs.length;
+      };
+      const map: Map<number, ShootWindow[]> = new Map<number, ShootWindow[]>();
+      for (const w of finalWindows) {
+        const g = groupOf(w);
+        const arr = map.get(g);
+        if (arr === undefined) {
+          map.set(g, [w]);
+        } else {
+          arr.push(w);
+        }
+      }
+      const keys: number[] = [];
+      map.forEach((value: ShootWindow[], key: number) => {
+        keys.push(key);
+        value.sort((a: ShootWindow, b: ShootWindow) => (better(a, b) ? -1 : 1));
+      });
+      keys.sort((a: number, b: number) => a - b);
+      const picked: ShootWindow[] = [];
+      let round = 0;
+      while (picked.length < maxResults) {
+        let added = false;
+        for (const k of keys) {
+          const arr = map.get(k);
+          if (arr === undefined || round >= arr.length) {
+            continue;
+          }
+          picked.push(arr[round]);
+          added = true;
+          if (picked.length >= maxResults) {
+            break;
+          }
+        }
+        if (!added) {
+          break;
+        }
+        round++;
+      }
+      out.windows = picked;
+      return out;
+    }
+    // 模式 A：有界插入 Top-K
+    const top: ShootWindow[] = [];
+    for (const w of finalWindows) {
+      if (top.length >= maxResults && !better(w, top[top.length - 1])) {
+        continue;
+      }
+      let pos = top.length;
+      while (pos > 0 && better(w, top[pos - 1])) {
+        pos--;
+      }
+      top.splice(pos, 0, w);
+      if (top.length > maxResults) {
+        top.pop();
+      }
+    }
+    out.windows = top;
+    return out;
   }
 }

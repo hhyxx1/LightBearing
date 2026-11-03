@@ -36,9 +36,11 @@ export class KernelStats {
   maxDepth: number = 0;
   /** 细分到最大深度仍无法判定的区间数（诚实记录近似性） */
   unresolvedIntervals: number = 0;
-  /** 判定为「整段确定有效」的区间数（一次命中覆盖多秒） */
-  provenValidChunks: number = 0;
-  /** 判定为「整段确定无效」被剪枝的区间数 */
-  provenInvalidChunks: number = 0;
+  /** 经验判定为「整段有效」的区间数（依据变化率上界，不是形式化证明） */
+  empiricalValidChunks: number = 0;
+  /** 经验判定为「整段无效」被剪枝的区间数（依据变化率上界，不是形式化证明） */
+  empiricalInvalidChunks: number = 0;
+  /** 落到 1 秒分辨率叶子的数量（数值近似边界） */
+  resolutionLeaves: number = 0;
   windowCount: number = 0;
 }

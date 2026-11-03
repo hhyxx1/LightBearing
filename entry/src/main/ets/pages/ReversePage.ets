@@ -6,6 +6,10 @@ import { Job, JobStatus } from '../model/BaseModels';
 import { SolarCalc } from '../services/SolarCalc';
 import { ReverseSearch, DayRange, SearchPlan } from '../services/ReverseSearch';
 import { LocalDayBounds } from '../services/LocalTimeResolver';
+import { SearchSession, SessionState } from '../services/SearchSession';
+import { ShootWindow } from '../model/ShootWindow';
+import { SearchOutcome, WindowSortMode } from '../services/ReverseSearch';
+import { TimelineLabels } from '../services/TimelineLabels';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
 import { TopBar, EmptyState, ErrorCard, NoticeBar, NumberField, StatusBadge, SkeletonCard,
@@ -34,6 +38,8 @@ export struct ReversePage {
   @State daylightOnly: boolean = false;
   @State searching: boolean = false;
   @State candidates: Candidate[] = [];
+  @State windows: ShootWindow[] = [];
+  @State windowNotes: string[] = [];
   @State searched: boolean = false;
   @State summary: string = '';
   @State lastMs: number = 0;
@@ -96,6 +102,8 @@ export struct ReversePage {
     this.searching = true;
     this.cancelRequested = false;
     this.candidates = [];
+    this.windows = [];
+    this.windowNotes = [];
     this.summary = '';
     this.sheetVisible = true;
     this.sheetPercent = 0;
@@ -139,38 +147,76 @@ export struct ReversePage {
 
       const t0 = new Date().getTime();
       const th = AppState.thresholds();
-      const found: Candidate[] = [];
-      // 逐日推进：每天让出一帧，进度与命中数实时可见
-      for (let i = 0; i < ranges.length; i++) {
+      const placeIdAtStart = place.id;
+      const session = new SearchSession(goal, th, ranges);
+      if (session.getState() === SessionState.INVALID) {
+        throw new Error(session.getError());
+      }
+      // 分片推进：每片最多约 12ms，片与片之间让出一帧；取消在下一次分片前生效
+      this.sheetPercent = 0;
+      while (!session.isFinished()) {
         if (this.cancelRequested) {
+          session.cancel();
           break;
         }
-        const part: Candidate[] = ReverseSearch.searchInRanges(goal, th, [ranges[i]]);
-        for (const c of part) {
-          found.push(c);
-        }
-        this.sheetPercent = Math.round(((i + 1) * 100) / ranges.length);
-        this.sheetDetail = `第 ${i + 1}/${ranges.length} 天 · 已命中 ${found.length}`;
+        session.step(12);
+        this.sheetPercent = session.getProgressPercent();
+        const curDate = TimeUtil.formatDate(place.tzId, session.getCurrentRangeStartUtc());
+        this.sheetDetail = `${curDate} · 已找到 ${session.getWindows().length} 个窗口`;
         await AppDb.updateJob(jobId, JobStatus.RUNNING, this.sheetPercent, '');
         await this.nextFrame();
       }
-
-      found.sort((a: Candidate, b: Candidate) => (a.azError + a.altError) - (b.azError + b.altError));
-      const limited: Candidate[] = found.length > goal.maxResults ? found.slice(0, goal.maxResults) : found;
-      this.lastMs = new Date().getTime() - t0;
-      this.candidates = limited;
+      const outcome: SearchOutcome = ReverseSearch.finalizeWindows(goal, th, session.getWindows(),
+        WindowSortMode.BEST, goal.maxResults, undefined, session.getStats(), ranges);
+      if (outcome.errorText.length > 0) {
+        throw new Error(outcome.errorText);
+      }
+      const cancelled = session.getState() === SessionState.CANCELLED;
+      // 机位在搜索期间被切换：旧结果直接丢弃，避免显示别的机位的窗口
+      const placeNow = AppState.currentPlace;
+      if (placeNow === undefined || placeNow.id !== placeIdAtStart) {
+        this.candidates = [];
+        this.windows = [];
+        this.windowNotes = [];
+        this.searched = false;
+        this.summary = '机位已切换，本次搜索结果已丢弃，请重新搜索。';
+        await AppDb.updateJob(jobId, cancelled ? JobStatus.CANCELLED : JobStatus.DONE, 100, '');
+        return;
+      }
+      const windows = outcome.windows;
+      const mapped: Candidate[] = [];
+      const notes: string[] = [];
+      for (const w of windows) {
+        mapped.push(Candidate.of(w.bestUtc, w.bestAzimuth, w.bestAltitude, w.bestAzError, w.bestAltError,
+          w.phase));
+        const startText = `${TimeUtil.formatTime(place.tzId, w.startUtc)}` +
+          `（${TimelineLabels.offsetText(TimeUtil.offsetMs(place.tzId, w.startUtc))}）`;
+        const endText = `${TimeUtil.formatTime(place.tzId, w.endUtc - 1)}`;
+        const durMin = Math.max(1, Math.round(w.durationMs() / 60000));
+        notes.push(`窗口 ${startText} – ${endText} · 约 ${durMin} 分钟` +
+          `${w.degenerate ? ' · 单点命中' : ''}${w.endUtc - w.startUtc < 60000 ? '（不足 1 分钟）' : ''}`);
+      }
+      this.windows = windows;
+      this.windowNotes = notes;
+      this.candidates = mapped;
       this.searched = true;
-      const cancelled = this.cancelRequested;
+      this.lastMs = new Date().getTime() - t0;
       const skippedNote = plan.skippedDays > 0 ? `，跳过 ${plan.skippedDays} 天不存在的日期` : '';
       const scopeNote = `请求 ${plan.requestedDays} 天、实际搜索 ${ranges.length} 天${skippedNote}`;
-      this.summary = cancelled
-        ? `已取消：${scopeNote}，保留已找到的 ${limited.length} 个候选（用时 ${this.lastMs} ms）。`
-        : `${scopeNote}，按 5 分钟粗扫并逐级细化，命中 ${limited.length} 个时间窗口（用时 ${this.lastMs} ms）。`;
+      const resultNote = cancelled
+        ? `已取消（未完成）：保留 ${mapped.length} 个已找到窗口`
+        : `找到 ${mapped.length} 个拍摄窗口`;
+      const cutNote = outcome.totalBeforeCut > mapped.length
+        ? ` 共 ${outcome.totalBeforeCut} 个窗口，按归一化误差取前 ${mapped.length} 个。` : '';
+      this.summary = `${scopeNote}，自适应区间搜索（1 秒边界）${resultNote}（用时 ${this.lastMs} ms）。${cutNote}`;
+      if (outcome.stats.unresolvedIntervals > 0) {
+        this.summary += ` 有 ${outcome.stats.unresolvedIntervals} 个区间未能在最大深度内判定。`;
+      }
       await AppDb.updateJob(jobId, cancelled ? JobStatus.CANCELLED : JobStatus.DONE,
         cancelled ? this.sheetPercent : 100, '');
       if (!cancelled) {
         await AppDb.addHistory('reverse',
-          `反向寻光 ${place.name} 目标 ${goal.azimuthTarget.toFixed(0)}°/${goal.altitudeTarget.toFixed(0)}° 命中 ${limited.length}`,
+          `反向寻光 ${place.name} 目标 ${goal.azimuthTarget.toFixed(0)}°/${goal.altitudeTarget.toFixed(0)}° 命中 ${mapped.length} 个窗口`,
           `${days}天`);
       }
     } catch (err) {
@@ -338,7 +384,7 @@ export struct ReversePage {
                   .fontSize(FontSize.BODY)
                   .fontColor($r('app.color.lb_muted'))
               } else {
-                ForEach(this.candidates, (c: Candidate) => {
+                ForEach(this.candidates, (c: Candidate, index: number) => {
                   Column({ space: Spacing.S }) {
                     Row({ space: Spacing.S }) {
                       Text(`${TimeUtil.formatDate(this.tzId, c.utcMs)} ${TimeUtil.formatTime(this.tzId, c.utcMs)} · ${TimeUtil.weekdayLabel(TimeUtil.weekday(this.tzId, c.utcMs))}`)
@@ -351,6 +397,11 @@ export struct ReversePage {
                     Text(`方位 ${c.azimuth.toFixed(2)}°（误差 ${c.azError.toFixed(2)}°）· 高度 ${c.altitude.toFixed(2)}°（误差 ${c.altError.toFixed(2)}°）`)
                       .fontSize(FontSize.CAPTION)
                       .fontColor($r('app.color.lb_muted'))
+                    if (index < this.windowNotes.length) {
+                      Text(this.windowNotes[index])
+                        .fontSize(FontSize.CAPTION)
+                        .fontColor($r('app.color.lb_accent'))
+                    }
                     Button('加入拍摄计划')
                       .type(ButtonType.Normal)
                       .height(MIN_TOUCH)

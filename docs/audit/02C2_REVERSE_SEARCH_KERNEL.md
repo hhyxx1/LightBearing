@@ -164,3 +164,14 @@ bestAltError / phase / valid / degenerate`，全部 UTC 毫秒，**不使用负�
 ```
 
 设备侧单元测试本轮未新增（纯算法，不需要 UI 交互）；2B 遗留的「原生滚轮真实手指操作」仍为未验证项。
+
+---
+
+## 2C-3 回填（状态更新）
+
+- `provenValidChunks` / `provenInvalidChunks` 已改名为 `empiricalValidChunks` / `empiricalInvalidChunks`，
+  并新增 `resolutionLeaves`：不再暗示「数学证明」，只表示「依据经验变化率上界的判定」。
+- 内核静态状态（`cachedT` / `cachedPos` / `goalRef` / `injected`）已移入 `KernelContext`，支持多会话交错；
+  `ReverseSearchKernel.setEvaluator()` 只保留给 2C-2 的兼容测试路径。
+- 窗口搜索已可**中途暂停**（`SearchSession.step(budgetMs)`），窗口只在区间处理完后聚合，分片不拆窗口。
+- 真机 MIA-AL00 实测：1 天 6ms / 14 天 65ms / 365 天 3 511ms；取消 0ms（详见 02C3 §10）。
