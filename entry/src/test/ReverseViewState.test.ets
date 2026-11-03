@@ -67,13 +67,30 @@ export default function reverseViewStateTest() {
       expect(v.allowAddToPlan).assertFalse();
     });
 
-    it('cancelled_shows_incomplete_results_still_addable', 0, () => {
+    it('cancelled_shows_incomplete_results_but_cannot_add_to_plan', 0, () => {
+      // 门禁：取消后的部分窗口不得直接加入拍摄计划
       const v = finalState(RunKind.CANCELLED, '', true, true, 4);
       expect(v.showForm).assertTrue();
       expect(v.showSearchWarning).assertFalse();
       expect(v.showResults).assertTrue();
       expect(v.showPartialBadge).assertFalse();
-      expect(v.allowAddToPlan).assertTrue();
+      expect(v.allowAddToPlan).assertFalse();
+    });
+
+    it('cancelled_without_windows_cannot_add_to_plan', 0, () => {
+      const v = finalState(RunKind.CANCELLED, '已取消（未完成）', true, true, 0);
+      expect(v.showResults).assertFalse();
+      expect(v.allowAddToPlan).assertFalse();
+      expect(v.showEmptyHint).assertFalse();
+    });
+
+    it('only_complete_done_ok_allows_add_to_plan', 0, () => {
+      expect(finalState(RunKind.DONE_OK, '', true, false, 2).allowAddToPlan).assertTrue();
+      // DONE_OK 但标记不完整（例如上游把部分结果当完整）→ 仍然禁止
+      expect(finalState(RunKind.DONE_OK, '', true, true, 2).allowAddToPlan).assertFalse();
+      expect(finalState(RunKind.DONE_EMPTY, '', true, false, 0).allowAddToPlan).assertFalse();
+      expect(finalState(RunKind.FAILED, '失败', true, true, 2).allowAddToPlan).assertFalse();
+      expect(finalState(RunKind.STALE, '', true, true, 2).allowAddToPlan).assertFalse();
     });
 
     it('stale_clears_results_but_keeps_form', 0, () => {

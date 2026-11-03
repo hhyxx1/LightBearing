@@ -4,6 +4,7 @@ import { FontSize, Radius, Spacing, MIN_TOUCH } from '../common/Theme';
 import { Place, ShootPlan, Candidate, SearchGoal, IdGen } from '../model/Models';
 import { Job, JobStatus } from '../model/BaseModels';
 import { SolarCalc } from '../services/SolarCalc';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReverseSearch, DayRange, SearchPlan } from '../services/ReverseSearch';
 import { LocalDayBounds } from '../services/LocalTimeResolver';
 import { SearchSession, SessionState } from '../services/SearchSession';
@@ -125,6 +126,7 @@ export struct ReversePage {
     this.lastDecision = new RunDecision();
     this.summary = '';
     this.sheetVisible = true;
+    hilog.info(0x0001, 'LBSearch', 'runSearch start');
     this.sheetPercent = 0;
     this.sheetDetail = '准备搜索…';
     const job = Job.of(IdGen.next('job'), 'reverse');
@@ -132,6 +134,7 @@ export struct ReversePage {
     const jobId = job.id;
     try {
       await AppDb.createJob(job);
+      hilog.info(0x0001, 'LBSearch', 'job created id=%{public}s', jobId);
       const goal = new SearchGoal();
       goal.placeId = place.id;
       goal.latWgs84 = place.latWgs84;
@@ -208,12 +211,16 @@ export struct ReversePage {
         windows = session.getWindows();
       }
 
+      hilog.info(0x0001, 'LBSearch', 'session state=%{public}d windows=%{public}d dropped=%{public}d unres=%{public}d',
+        sessionState, windows.length, droppedInvalid, session.getUnreliableRanges());
       const decision: RunDecision = SearchRunPolicy.decide(sessionState, windows.length,
         windows.length + droppedInvalid, droppedInvalid, session.getUnreliableRanges(),
         session.getError(), placeChanged, scopeNote);
       this.lastDecision = decision;
       const elapsed = new Date().getTime() - t0;
       this.lastMs = elapsed;
+      hilog.info(0x0001, 'LBSearch', 'decision kind=%{public}d job=%{public}d showResults=%{public}s elapsed=%{public}d',
+        decision.kind, decision.jobStatus, decision.showResults ? 'Y' : 'N', elapsed);
 
       if (decision.kind === RunKind.STALE) {
         this.candidates = [];
@@ -258,6 +265,8 @@ export struct ReversePage {
       }
       await AppDb.updateJob(jobId, decision.jobStatus,
         decision.jobStatus === JobStatus.DONE ? 100 : this.sheetPercent, decision.errorText);
+      hilog.info(0x0001, 'LBSearch', 'job updated status=%{public}d searched=%{public}s',
+        decision.jobStatus, this.searched ? 'Y' : 'N');
       if (decision.writeSuccessHistory) {
         await AppDb.addHistory('reverse',
           `反向寻光 ${place.name} 目标 ${goal.azimuthTarget.toFixed(0)}°/${goal.altitudeTarget.toFixed(0)}° 命中 ${windows.length} 个窗口`,
@@ -265,6 +274,7 @@ export struct ReversePage {
       }
     } catch (err) {
       this.errorText = `搜索失败：${(err as Error).message}`;
+      hilog.error(0x0001, 'LBSearch', 'runSearch failed: %{public}s', (err as Error).message);
       this.partialResults = false;
       this.lastDecision = new RunDecision();
       this.lastDecision.kind = RunKind.FAILED;
@@ -437,7 +447,7 @@ export struct ReversePage {
               NoticeBar({ text: this.summary })
                 .id('reverse_summary')
 
-              if (this.candidates.length === 0) {
+              if (this.viewState().showEmptyHint) {
                 Text('在该容差与日期范围内没有满足条件的时刻。可以放宽容差、增加天数，或调整目标角。')
                   .fontSize(FontSize.BODY)
                   .fontColor($r('app.color.lb_muted'))

@@ -79,7 +79,9 @@ export class ReverseViewState {
       v.showResults = decision.showResults && windowCount > 0;
       v.showPartialBadge = failed && windowCount > 0;
       // 未完整校验的部分结果不允许进入计划
-      v.allowAddToPlan = v.showResults && !failed;
+      // 只有「正常完成且结果完整」的窗口才允许直接加入拍摄计划；
+      // FAILED / CANCELLED / STALE / DONE_EMPTY 一律禁止（未完整校验的部分结果不得进入计划）
+      v.allowAddToPlan = v.showResults && decision.kind === RunKind.DONE_OK && !decision.incomplete;
       v.showEmptyHint = decision.kind === RunKind.DONE_EMPTY;
       if (cancelled) {
         v.showEmptyHint = false;
