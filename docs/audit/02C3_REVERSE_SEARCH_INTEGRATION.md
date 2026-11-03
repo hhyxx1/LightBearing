@@ -143,6 +143,7 @@ score(window) = bestAzError / max(azTolerance, 1) + bestAltError / max(altTolera
 
 - `unresolvedIntervals = 0`；最大深度 17/18；
 - 取消延迟：**0 ms**（`state=2 CANCELLED`，已保留 11 个窗口作为部分结果）；
+- 注：以上为补丁前版本设备数据；补丁后版本设备回归见文末。
 - 宿主机（x86，2C-2 单次全跑）对比：1 天 14ms、365 天 7 181ms —— 真机 365 天反而更快，
   因为宿主机数字包含逐日循环与探针开销，两者不可直接比较，**本文以真机数据为准**；
 - 设备侧用例 `KernelPerfReal` 2/2 通过（阈值：1 天 ≤200ms、14 天 ≤1s、365 天 ≤20s、单分片 ≤40ms、
@@ -223,3 +224,59 @@ aa test -s class TimeZoneReal  → Tests run: 12, Failure: 0, Error: 0, Pass: 12
 
 `perf.log`（设备锁屏导致 `aa test` 启动失败的信息）已 `git rm --cached` 并加入 `.gitignore`
 （同时忽略 `*.log`，`docs/**/*.log` 例外）；失败记录已整理进本文档，根目录不再积累临时日志。
+
+---
+
+# 最终状态（2C 收尾）
+
+## 搜索异常状态端到端传播（本轮修复）
+
+### P0：页面忽略 SessionState.FAILED
+
+新增纯逻辑模块 `services/SearchRunPolicy.ets`：把「会话状态 + 后处理统计 + 机位是否切换」
+映射成页面可执行的动作（`RunKind` / `RunDecision`：`jobStatus`、`writeSuccessHistory`、
+`showResults`、`errorText`、`incomplete`）。`ReversePage` 只按该结果执行，不再自己判断状态。
+
+| 会话终态 | 行为 |
+|---|---|
+| `DONE` + 有窗口 | `DONE_OK`：展示窗口，Job `DONE`，写成功历史 |
+| `DONE` + 零窗口 | `DONE_EMPTY`：显示「完成，没有符合条件的时段（可放宽容差或增加天数）」，Job `DONE`，写历史 |
+| `CANCELLED` | `CANCELLED`：保留部分窗口并标「已取消（未完成）」，Job `CANCELLED`，**不写历史** |
+| `FAILED` / `INVALID` | `FAILED`：展示 `session.getError()` 的具体原因，**不置 `searched=true` 展示成功结果**，Job `FAILED`，**不写历史**；若有部分窗口则标注「结果不完整」 |
+| 机位已切换 | `STALE`：清空结果；Job 终态保留原语义（FAILED→FAILED、CANCELLED→CANCELLED、否则 DONE），**不得覆盖成 DONE 成功** |
+| `DONE` 但 `droppedInvalid > 0` | `FAILED`：提示「有 N 个窗口在后处理阶段被拒绝（位置与容差不一致），结果不完整」，Job `FAILED`，**不写历史**；只展示通过校验的窗口 |
+
+关键点：`finalizeWindows` 只在 `DONE`/`CANCELLED` 时执行；`FAILED`/`INVALID` 直接使用会话已收集的
+部分窗口，避免用不可信数据继续后处理。
+
+### 红绿证据
+
+```text
+修复前：Tests run: 138, Failure: 7   （9 条终态用例中 7 条失败）
+        失败：failed_without_windows_propagates_reason_and_job_failed / failed_with_partial_windows_is_not_complete /
+             cancelled_keeps_incomplete_semantics / dropped_invalid_windows_block_complete_success /
+             place_changed_never_overwrites_failed_with_done / invalid_session_state_is_failure_not_empty_result /
+             previous_failure_does_not_pollute_next_run
+修复后：Tests run: 138, Failure: 0, Error: 0, Pass: 138
+```
+
+### 最终测试与构建状态
+
+| 项目 | 结果 |
+|---|---|
+| 宿主机回归 | `Tests run: 138, Failure: 0, Error: 0, Pass: 138`（原 129 条全部保留 + 9 条终态用例） |
+| 外部太阳参考 | `node tools/solar-check/check.mjs` → 全部通过 |
+| 应用 HAP | BUILD SUCCESSFUL |
+| 真机 `KernelPerfReal` | 2/2（补丁前版本 b08601f 上执行；本轮未重跑） |
+| 真机 `TimeZoneReal` | 12/12（同上） |
+
+## 指标口径（避免混用）
+
+| 指标 | 数值 | 状态 |
+|---|---|---|
+| 会话 `session.cancel()` 状态设置 | 0 ms | 已测（真机） |
+| 单分片最大计算耗时 | 6 / 8 / 11 ms（1 / 14 / 365 天） | 已测（真机） |
+| 搜索会话推进总耗时（不含页面） | 6 ms / 65 ms / 3 511 ms | 已测（真机，补丁前版本） |
+| **UI 点击「取消」→ 搜索停止的端到端延迟** | 无数值 | **未测**（自动化定位不到「搜索候选时段」按钮，未取得可信数据） |
+| **含让帧与 `AppDb.updateJob` 的整段搜索耗时** | 只有页面自述的 `用时 N ms` | **未独立测量** |
+| 一对一窗口参考匹配（边界误差/bestUtc 误差/拆分与误合并计数） | 无 | **未实现**（Node 侧无内核镜像） |
