@@ -10,6 +10,7 @@ import { SearchSession, SessionState } from '../services/SearchSession';
 import { ShootWindow } from '../model/ShootWindow';
 import { SearchOutcome, WindowSortMode } from '../services/ReverseSearch';
 import { RunDecision, RunKind, SearchRunPolicy } from '../services/SearchRunPolicy';
+import { ReverseViewState } from '../services/ReverseViewState';
 import { TimelineLabels } from '../services/TimelineLabels';
 import { TimeUtil } from '../services/TimeUtil';
 import { AppDb } from '../repository/AppDb';
@@ -28,6 +29,12 @@ export struct ReversePage {
   };
   @State ready: boolean = false;
   @State errorText: string = '';
+  /** 页面初始化失败（整页不可用） */
+  @State initErrorText: string = '';
+  /** 本次结果不完整（FAILED 的部分结果），不允许直接加入拍摄计划 */
+  @State partialResults: boolean = false;
+  /** 最近一次搜索的终态决定（渲染状态由 ReverseViewState 统一推导） */
+  private lastDecision: RunDecision = new RunDecision();
   @State hasPlace: boolean = false;
   @State placeName: string = '';
   @State tzId: string = '';
@@ -72,7 +79,7 @@ export struct ReversePage {
       this.tzId = place.tzId;
       this.ready = true;
     } catch (err) {
-      this.errorText = `读取机位失败：${(err as Error).message}`;
+      this.initErrorText = `读取机位失败：${(err as Error).message}`;
       this.ready = true;
     }
   }
@@ -83,6 +90,12 @@ export struct ReversePage {
   }
 
   /** 让出一帧，保证进度浮层能刷新（长任务不会卡住 UI 线程） */
+  /** 页面渲染状态：与测试共用同一份纯逻辑 */
+  private viewState(): ReverseViewState {
+    return ReverseViewState.of(this.initErrorText.length > 0, this.ready, this.hasPlace,
+      this.lastDecision, this.candidates.length);
+  }
+
   private async nextFrame(): Promise<void> {
     await new Promise<void>((resolve: () => void) => {
       setTimeout(() => {
@@ -105,6 +118,8 @@ export struct ReversePage {
     this.candidates = [];
     this.windows = [];
     this.windowNotes = [];
+    this.errorText = '';
+    this.partialResults = false;
     this.summary = '';
     this.sheetVisible = true;
     this.sheetPercent = 0;
@@ -193,6 +208,7 @@ export struct ReversePage {
       const decision: RunDecision = SearchRunPolicy.decide(sessionState, windows.length,
         windows.length + droppedInvalid, droppedInvalid, session.getUnreliableRanges(),
         session.getError(), placeChanged, scopeNote);
+      this.lastDecision = decision;
       const elapsed = new Date().getTime() - t0;
       this.lastMs = elapsed;
 
@@ -202,6 +218,7 @@ export struct ReversePage {
         this.windowNotes = [];
         this.searched = false;
         this.errorText = '';
+        this.partialResults = false;
         this.summary = decision.summary;
         await AppDb.updateJob(jobId, decision.jobStatus, this.sheetPercent, decision.errorText);
         return;
@@ -229,7 +246,9 @@ export struct ReversePage {
         this.windowNotes = [];
       }
       this.searched = decision.showResults;
+      // 搜索失败只出「警示条」，不再用错误卡顶掉整个表单
       this.errorText = decision.kind === RunKind.FAILED ? decision.errorText : '';
+      this.partialResults = decision.incomplete && decision.kind === RunKind.FAILED;
       this.summary = `${decision.summary}（用时 ${elapsed} ms）`;
       if (unresolved > 0) {
         this.summary += ` 有 ${unresolved} 个区间未能在最大深度内判定。`;
@@ -243,6 +262,10 @@ export struct ReversePage {
       }
     } catch (err) {
       this.errorText = `搜索失败：${(err as Error).message}`;
+      this.partialResults = false;
+      this.lastDecision = new RunDecision();
+      this.lastDecision.kind = RunKind.FAILED;
+      this.lastDecision.errorText = this.errorText;
       try {
         await AppDb.updateJob(jobId, JobStatus.FAILED, this.sheetPercent, `${(err as Error).message}`);
       } catch (inner) {
@@ -289,24 +312,24 @@ export struct ReversePage {
       Column({ space: Spacing.M }) {
         TopBar({ title: '反向寻光', subtitle: '指定方位与高度，找出可达的时间窗口' })
 
-        if (this.errorText.length > 0) {
+        if (this.viewState().showInitErrorCard) {
           ErrorCard({
-            message: this.errorText,
+            message: this.initErrorText,
             onRetry: () => {
-              this.errorText = '';
+              this.initErrorText = '';
               this.initPage();
             },
             onBack: () => {
               this.onBack();
             }
           })
-        } else if (!this.ready) {
+        } else if (this.viewState().showSkeleton) {
           Column({ space: Spacing.M }) {
             SkeletonCard()
             SkeletonCard()
           }
           .width('100%')
-        } else if (!this.hasPlace) {
+        } else if (this.viewState().showNoPlace) {
           EmptyState({
             title: '还没有机位',
             description: '反向寻光需要机位坐标。请先新增机位或使用当前位置。',
@@ -317,6 +340,12 @@ export struct ReversePage {
           })
         } else {
           Column({ space: Spacing.M }) {
+            if (this.viewState().showSearchWarning) {
+              NoticeBar({ text: this.errorText })
+            }
+            if (this.viewState().showPartialBadge) {
+              NoticeBar({ text: '以下为部分结果（搜索未完整完成），已禁用「加入拍摄计划」。请修正条件后重新搜索。' })
+            }
             Text(this.placeName).fontSize(FontSize.BODY).fontColor($r('app.color.lb_muted'))
             NumberField({
               label: '目标方位角', unit: '°', valueText: this.azInput, placeholder: '0-360',
@@ -424,14 +453,18 @@ export struct ReversePage {
                         .fontSize(FontSize.CAPTION)
                         .fontColor($r('app.color.lb_accent'))
                     }
-                    Button('加入拍摄计划')
+                    Button(this.viewState().allowAddToPlan ? '加入拍摄计划' : '部分结果，暂不可加入计划')
                       .type(ButtonType.Normal)
                       .height(MIN_TOUCH)
                       .width('100%')
                       .borderRadius(Radius.BUTTON)
                       .backgroundColor($r('app.color.lb_panel2'))
-                      .fontColor($r('app.color.lb_ink'))
+                      .fontColor(this.viewState().allowAddToPlan ? $r('app.color.lb_ink') : $r('app.color.lb_muted'))
+                      .enabled(this.viewState().allowAddToPlan)
                       .onClick(() => {
+                        if (!this.viewState().allowAddToPlan) {
+                          return;
+                        }
                         this.addToPlan(c);
                       })
                   }

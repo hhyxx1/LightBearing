@@ -84,11 +84,15 @@ if (this.spanList.length === 0 && this.ctx.stats.nonFiniteSamples > this.rangeNo
 |---|---|---|
 | 同一天前半有效、后半 NaN/Infinity | `QA1-A1` | `DONE`，1 窗口，`nonFiniteSamples>0`，`unreliableRanges=0` |
 | 同一天先 NaN、后出现有效窗口 | `QA1-A2` | `DONE`，1 窗口 |
-| 第一天正常、第二天部分 NaN | `QA1-A4` | `DONE`，1 窗口 |
+| 第一天无命中；第二天前 3 分钟 NaN、7–8 分钟处有有效窗口 | `QA1-A4` | `DONE`，1 窗口 |
 | 已有窗口后出现 Infinity | `QA1-A5` | `DONE`，`nonFiniteSamples>0` |
 | 全天 NaN 且无窗口 | `QA1-A3` | `FAILED`（唯一被正确处理的路径） |
 
 风险：搜索可能在「部分日期太阳位置不可用」的情况下宣称完整成功，并把结果写入历史。
+
+> **状态更新（QA-2A，提交见 `QA2A_P1_FIXES.md`）**：QA-01 已修复——任何区间出现非有限采样都会使
+> 会话终态为 `FAILED`（取消优先保持 `CANCELLED`），窗口作为部分结果保留且禁止加入计划。
+> 上述表格保留为**修复前的原始证据**。
 
 ### 6.2 终态与 UI 一致性（QA-02，P1）
 
@@ -158,7 +162,7 @@ else { 参数表单 + 结果列表 }
 - 建议：把 `nonFiniteSamples` 变化纳入区间可靠性判定（有窗口时标注「部分日期位置不可用」），并在 policy 中让 `unreliableRanges>0` 影响终态；补 4 条红绿用例
 - 测试建议：上述 4 场景改为断言「不完整/FAILED」，并验证 Job 与历史不写成功
 
-### QA-02（P1，源码确认）
+### QA-02（P1，源码确认；QA-2A 已修复）
 - 位置：`ReversePage.ets` 渲染分支 + `SearchRunPolicy` 的 `showResults/errorText` 组合
 - 触发：会话 `FAILED` 且已有部分窗口
 - 实际：`ErrorCard` 顶掉结果与表单，部分窗口不可见，`searched=true` 却无结果
@@ -166,7 +170,7 @@ else { 参数表单 + 结果列表 }
 - 建议：把 ErrorCard 从互斥分支改为在结果区上方追加警示；表单始终可达
 - 测试建议：页面级渲染条件抽成可测函数（给定 decision → 是否渲染表单/结果/错误）
 
-### QA-03（P1，源码确认）
+### QA-03（P1，源码确认；QA-2A 已修复）
 - 位置：`PlannerPage.startEdit()`（`idx` 默认 0，无匹配分支） + `AppDb.deletePlace()`（只删 places）
 - 触发：删除某机位后编辑引用它的旧计划
 - 实际：静默切到 `places[0]`，保存会把计划的机位/坐标改写成另一个机位
@@ -174,7 +178,7 @@ else { 参数表单 + 结果列表 }
 - 建议：`startEdit` 增加「找不到机位」分支（保留快照坐标 + 提示），保存时不要覆盖 place_id；或删除机位时把关联计划的 `place_id` 置空并提示
 - 测试建议：纯逻辑测试（给定 plans/places → 编辑上下文），断言不静默改机位
 
-### QA-04（P2，测试复现）
+### QA-04（P2，测试复现；QA-2A 已修复）
 - 位置：`SearchRunPolicy.decide()` 的 `unreliableRanges` 形参
 - 实际：不同取值产生完全相同的决定（死参数）
 - 证据：`QA1-B1`
@@ -221,6 +225,9 @@ Tab 切页 1.35s、宿主机 146/146、太阳参考对照通过。
 | 未验证面 | 中 | UI 视觉与端到端交互指标缺失 |
 
 结论：**不建议在当前状态下直接发布**；QA-01/QA-03 属于用户数据正确性风险，应在发布前修复并回归。
+
+> **QA-2A 后更新**：QA-01/QA-02/QA-03/QA-04 已修复并有 163/163 宿主机回归 + 真机两套用例通过；
+> QA-05～QA-09 与 QA-1 的 NOT_RUN 项仍未处理，发布风险评估相应下降一档（仍建议先补 QA-08 的 UI 端到端证据）。
 
 ## 13. 推荐修复顺序
 

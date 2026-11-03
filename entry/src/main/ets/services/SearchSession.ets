@@ -42,6 +42,8 @@ export class SearchSession {
   /** 当前区间开始时的非有限采样计数（用于识别不可靠区间） */
   private rangeNonFiniteStart: number = 0;
   private unreliableRanges: number = 0;
+  /** 本次会话是否出现过无法可靠判断的区间（任何非有限太阳位置） */
+  private unreliableData: boolean = false;
 
   constructor(goal: SearchGoal, thresholds: LightThresholds, ranges: DayRange[],
     evaluator?: SolarPositionEvaluator, stats?: KernelStats) {
@@ -139,12 +141,11 @@ export class SearchSession {
 
   /** 结束当前区间：把跨度聚合成窗口并入结果 */
   private finishRange(): void {
-    // 区间内没有有效跨度、但出现过非有限太阳位置 → 不能当作「没有拍摄机会」
-    if (this.spanList.length === 0 &&
-      this.ctx.stats.nonFiniteSamples > this.rangeNonFiniteStart) {
+    // 只要该区间出现过非有限太阳位置，本区间就不能被视为「可靠」
+    // —— 与是否有有效跨度无关（修复：先前只在完全没有命中时才判失败）
+    if (this.ctx.stats.nonFiniteSamples > this.rangeNonFiniteStart) {
       this.unreliableRanges++;
-      this.state = SessionState.FAILED;
-      this.error = '太阳位置出现非有限值（NaN/Infinity），该日期不能判定为无拍摄机会，请重新搜索';
+      this.unreliableData = true;
     }
     this.rangeActive = false;
     if (this.spanList.length > 0) {
@@ -181,7 +182,14 @@ export class SearchSession {
           }
         }
         if (this.rangeIndex >= this.ranges.length) {
-          this.state = SessionState.DONE;
+          // 有不可靠区间 → 不能宣称完整完成；用户主动取消仍保持 CANCELLED
+          if (this.unreliableData) {
+            this.state = SessionState.FAILED;
+            this.error = `有 ${this.unreliableRanges} 个搜索区间的太阳位置出现非有限值（NaN/Infinity），` +
+              '结果不完整，不能判定为「没有拍摄机会」；请重新搜索或检查机位数据';
+          } else {
+            this.state = SessionState.DONE;
+          }
           return true;
         }
         const r = this.ranges[this.rangeIndex];

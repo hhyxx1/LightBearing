@@ -74,6 +74,19 @@ export class SearchRunPolicy {
       return d;
     }
 
+    // 双重防线：即使会话状态被误传为 DONE，只要存在不可靠区间也不能宣称完整成功
+    if (unreliableRanges > 0 && sessionState !== SessionState.CANCELLED) {
+      d.kind = RunKind.FAILED;
+      d.jobStatus = JobStatus.FAILED;
+      d.errorText = `有 ${unreliableRanges} 个搜索区间的太阳位置不可用（NaN/Infinity），结果不完整`;
+      d.summary = `${head}结果不完整：${d.errorText}` +
+        (windowCount > 0 ? `（仅展示 ${windowCount} 个已找到窗口，未完整校验）` : '');
+      d.writeSuccessHistory = false;
+      d.showResults = windowCount > 0;
+      d.incomplete = true;
+      return d;
+    }
+
     if (droppedInvalid > 0) {
       // 后处理阶段拒绝了窗口：数据不一致，不得宣称完整成功
       d.kind = RunKind.FAILED;

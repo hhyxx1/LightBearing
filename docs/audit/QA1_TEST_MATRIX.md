@@ -30,7 +30,7 @@
 |---|---|---|---|
 | 新增/修改机位 | 源码 + 已有 TEST 机位 | PASS（源码） | 本轮未新增/改动机位（按要求保留 TEST 机位） |
 | 切换机位后各页刷新 | 源码 | 部分 PASS | `ReversePage` 有陈旧结果丢弃；其他页依赖 `AppState` 通知 |
-| 删除机位后关联计划 | 源码 | **FAIL** | QA-03：`deletePlace` 不处理 plans；`startEdit` 静默回退 `places[0]` |
+| 删除机位后关联计划 | 源码 + 新增 8 条守卫测试 | **PASS（QA-2A 修复）** | 原缺陷 QA-03 已修：精确匹配、缺失时保留快照、明确换机位才改写 |
 | 无效坐标/异常时区 | 源码 | PASS（源码） | 经纬度范围与容差在 Session 构造处校验；非法时区走 UNAVAILABLE |
 
 ## 3. 太阳轨迹与时间轴（2A/2B）
@@ -52,7 +52,7 @@
 | 创建/编辑/保存/删除 | 源码 + 历史真机操作 | PASS（历史） | 计划列表与保存逻辑在 2B 阶段真机验证过 |
 | 编辑不改时间保留 UTC | 宿主机 `TimeSelection` 用例 | PASS | `startEdit` 不重算 UTC |
 | GAP 禁止保存 / OVERLAP 必须选候选 | 宿主机 + 真机（历史） | PASS（会话/逻辑层） | 候选按钮的两次实际点击保存仍未完成（历史遗留） |
-| 机位被删除后编辑 | 源码 | **FAIL** | QA-03 |
+| 机位被删除后编辑 | 宿主 8 条守卫测试 | **PASS（QA-2A 修复）** | 见 `PlanPlaceGuard.test.ets` |
 | 换机位保留 UTC | 宿主机 + 源码 | PASS | `switchPlace` 保留 `selectedUtc` |
 
 ## 5. 反向寻光
@@ -67,10 +67,10 @@
 | 365 天（会话层） | 真机 | PASS | 3 511 ms / 653 975 次 `position` / 40 窗口 |
 | 取消（会话层） | 真机 | PASS | `cancel()` 0 ms 置位，单分片 ≤11 ms |
 | **取消（UI 端到端）** | — | **BLOCKED** | 自动化定位不到「搜索候选时段」按钮 |
-| **FAILED 且部分窗口的 UI 呈现** | 源码 | **FAIL** | QA-02：ErrorCard 遮蔽结果与表单 |
+| FAILED 且部分窗口的 UI 呈现 | 源码 + `ReverseViewState` 8 条用例 | **PASS（QA-2A 修复）** | 表单保留、警示条、部分结果禁用加入计划 |
 | 搜索中切换机位 | 宿主 pure policy + 源码 | PASS（逻辑） | `STALE` 不覆盖 FAILED/CANCELLED，结果丢弃 |
 | 结果加入拍摄计划 | 源码 | PASS（源码） | 用 `bestUtc` 建计划，未做真机点击验证 |
-| 异常数据混合（部分 NaN） | 宿主机 `SearchAnomalyAudit` | **FAIL** | QA-01：A1/A2/A4/A5 仍判 DONE |
+| 异常数据混合（部分 NaN） | 宿主机 `SearchAnomalyAudit` | **PASS（QA-2A 修复）** | A1/A2/A4/A5 现在均为 FAILED + 部分窗口；A7 取消仍 CANCELLED |
 | 一对一窗口参考匹配 | — | **NOT_RUN** | QA-07 |
 
 ## 6. 其他页面
@@ -145,3 +145,10 @@
 | 性能/稳定性 | 3 | 0 | 4 | 1 |
 
 > 说明：表中 PASS 含「源码确认」与「本轮执行」两类，逐条已在证据列注明；NOT_RUN 一律不计入通过。
+>
+> **证据分类要求**：`源码阅读` / `宿主机测试` / `真机执行` / `UI 端到端` 四类必须区分；
+> 任何「CODE_REVIEWED」都不得写成实际执行通过。
+>
+> **QA-2A 更新**：新增 `PlanPlaceGuard.test.ets`（8 条）、`ReverseViewState.test.ets`（8 条）、
+> `SearchAnomalyAudit` 迁移+A7（9 条）。宿主机总数 146 → **163/163 通过**；
+> 真机本次构建安装后执行 `KernelPerfReal` 2/2、`TimeZoneReal` 12/12（均为真机执行）。

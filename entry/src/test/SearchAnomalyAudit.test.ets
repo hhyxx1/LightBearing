@@ -74,11 +74,12 @@ export default function searchAnomalyAuditTest() {
       const a1 = T0 + 10 * MIN;
       const session = runSession(new MixedEvaluator(a0 + 2 * MIN, a0 + 3 * MIN,
         a0 + 6 * MIN, a1), [DayRange.of(a0, a1)]);
-      expect(session.getState()).assertEqual(SessionState.DONE);
-      expect(session.getWindows().length).assertEqual(1);
-      // 异常确实发生过，但没有改变终态（缺陷证据）
+      // QA-2A 修复后：只要出现非有限位置，就不再宣称完整完成
+      expect(session.getState()).assertEqual(SessionState.FAILED);
+      expect(session.getWindows().length).assertEqual(1); // 部分结果保留
       expect(session.getStats().nonFiniteSamples > 0).assertTrue();
-      expect(session.getUnreliableRanges()).assertEqual(0);
+      expect(session.getUnreliableRanges()).assertEqual(1);
+      expect(session.getError().indexOf('非有限') >= 0).assertTrue();
     });
 
     it('QA1-A2_nan_then_valid_same_range_reports_done', 0, () => {
@@ -87,9 +88,9 @@ export default function searchAnomalyAuditTest() {
       const a1 = T0 + 10 * MIN;
       const session = runSession(new MixedEvaluator(a0 + 7 * MIN, a0 + 8 * MIN,
         a0, a0 + 3 * MIN), [DayRange.of(a0, a1)]);
-      expect(session.getState()).assertEqual(SessionState.DONE);
+      expect(session.getState()).assertEqual(SessionState.FAILED);
       expect(session.getWindows().length).assertEqual(1);
-      expect(session.getUnreliableRanges()).assertEqual(0);
+      expect(session.getUnreliableRanges()).assertEqual(1);
     });
 
     it('QA1-A3_full_nan_day_fails_the_session', 0, () => {
@@ -110,8 +111,9 @@ export default function searchAnomalyAuditTest() {
       const d2e = d2s + 10 * MIN;
       const session = runSession(new MixedEvaluator(d2s + 7 * MIN, d2s + 8 * MIN, d2s, d2s + 3 * MIN),
         [DayRange.of(d1s, d1e), DayRange.of(d2s, d2e)]);
-      expect(session.getState()).assertEqual(SessionState.DONE);
+      expect(session.getState()).assertEqual(SessionState.FAILED);
       expect(session.getWindows().length).assertEqual(1);
+      expect(session.getUnreliableRanges()).assertEqual(1);
     });
 
     it('QA1-A5_infinity_after_windows_is_ignored', 0, () => {
@@ -120,8 +122,9 @@ export default function searchAnomalyAuditTest() {
       const a1 = T0 + 10 * MIN;
       const session = runSession(new MixedEvaluator(a0 + 2 * MIN, a0 + 3 * MIN,
         a0 + 8 * MIN, a1), [DayRange.of(a0, a1)]);
-      expect(session.getState()).assertEqual(SessionState.DONE);
+      expect(session.getState()).assertEqual(SessionState.FAILED);
       expect(session.getStats().nonFiniteSamples > 0).assertTrue();
+      expect(session.getUnreliableRanges()).assertEqual(1);
     });
 
     it('QA1-A6_normal_search_then_cancel_keeps_cancelled', 0, () => {
@@ -132,14 +135,28 @@ export default function searchAnomalyAuditTest() {
       expect(session.getState()).assertEqual(SessionState.CANCELLED);
     });
 
-    it('QA1-B1_unreliable_ranges_parameter_does_not_affect_decision', 0, () => {
-      // 纯逻辑：unreliableRanges 传入但未参与决策 → 不同取值得到完全相同的决定（死参数证据）
+    it('QA2A-B1_unreliable_ranges_now_blocks_complete_success', 0, () => {
+      // QA-04 修复后：unreliableRanges 参与决策，形成双重防线
       const none = SearchRunPolicy.decide(SessionState.DONE, 2, 2, 0, 0, '', false, 'scope');
+      expect(none.kind).assertEqual(RunKind.DONE_OK);
+      expect(none.jobStatus).assertEqual(JobStatus.DONE);
       const some = SearchRunPolicy.decide(SessionState.DONE, 2, 2, 0, 5, '', false, 'scope');
-      expect(none.kind).assertEqual(some.kind);
-      expect(none.jobStatus).assertEqual(some.jobStatus);
-      expect(none.summary).assertEqual(some.summary);
-      expect(none.writeSuccessHistory).assertEqual(some.writeSuccessHistory);
+      expect(some.kind).assertEqual(RunKind.FAILED);
+      expect(some.jobStatus).assertEqual(JobStatus.FAILED);
+      expect(some.writeSuccessHistory).assertFalse();
+      expect(some.incomplete).assertTrue();
+      expect(some.showResults).assertTrue();
+      expect(some.errorText.length > 0).assertTrue();
+    });
+
+    it('QA2A-A7_cancel_with_anomaly_stays_cancelled', 0, () => {
+      // 用户主动取消优先：即使出现异常也保持 CANCELLED，不改成 FAILED
+      const session = new SearchSession(goalOf(), LightThresholds.defaults(),
+        [DayRange.of(T0, T0 + 30 * MIN)],
+        new MixedEvaluator(T0 + 2 * MIN, T0 + 3 * MIN, T0 + 10 * MIN, T0 + 30 * MIN));
+      session.step(1);
+      session.cancel();
+      expect(session.getState()).assertEqual(SessionState.CANCELLED);
     });
 
     it('QA1-B2_failed_with_partial_windows_wants_results_and_error', 0, () => {

@@ -6,6 +6,7 @@ import { SolarCalc, SunPosition } from '../services/SolarCalc';
 import { TimeUtil } from '../services/TimeUtil';
 import { PlanTimeSelection, TimeSelection, SaveCheck } from '../services/TimeSelection';
 import { LocalResolveStatus } from '../services/LocalTimeResolver';
+import { PlanPlaceGuard, EditPlaceContext, SavePlaceOutcome } from '../services/PlanPlaceGuard';
 import { TimelineLabels } from '../services/TimelineLabels';
 import { AppDb } from '../repository/AppDb';
 import { ExportService, ExportResult } from '../services/ExportService';
@@ -55,6 +56,9 @@ export struct PlannerPage {
   };
   @State ready: boolean = false;
   @State errorText: string = '';
+  /** 原机位已删除（孤立计划）：保存时保留机位快照，不允许静默改写 */
+  @State placeDetached: boolean = false;
+  @State placeSnapshotNote: string = '';
   @State plans: ShootPlan[] = [];
   /** 刚删除的计划，用于页面内撤销 */
   @State undoPlan: ShootPlan | undefined = undefined;
@@ -79,6 +83,10 @@ export struct PlannerPage {
   @State overlapOpen: boolean = false;
   @State overlapLabels: string[] = [];
   private selection: PlanTimeSelection = new PlanTimeSelection();
+  /** 编辑会话语境：机位精确匹配结果（新建计划时为空上下文） */
+  private editCtx: EditPlaceContext = new EditPlaceContext();
+  /** 用户是否在本轮编辑中明确更换了机位 */
+  private placeChangedExplicitly: boolean = false;
   /** 用户本次是否主动改过时间：未改时编辑已有计划必须保留原 UTC */
   private timeEdited: boolean = false;
   @State exporting: boolean = false;
@@ -120,6 +128,11 @@ export struct PlannerPage {
     AppState.markDirty('拍摄计划编辑');
     this.editId = '';
     this.placeIndex = 0;
+    this.placeDetached = false;
+    this.placeSnapshotNote = '';
+    this.placeChangedExplicitly = false;
+    this.editCtx = new EditPlaceContext();
+    this.editCtx.matchedIndex = 0;
     const place = this.places[0];
     this.selectedUtc = TimeUtil.now();
     this.timeMessage = '';
@@ -144,13 +157,13 @@ export struct PlannerPage {
     this.editing = true;
     AppState.markDirty('拍摄计划编辑');
     this.editId = plan.id;
-    let idx = 0;
-    for (let i = 0; i < this.places.length; i++) {
-      if (this.places[i].id === plan.placeId) {
-        idx = i;
-      }
-    }
-    this.placeIndex = idx;
+    // 精确匹配原机位；匹配失败（机位已删除）不得回退到索引 0
+    const ctx: EditPlaceContext = PlanPlaceGuard.resolveEdit(this.places, plan);
+    this.editCtx = ctx;
+    this.placeDetached = ctx.detached;
+    this.placeSnapshotNote = ctx.note;
+    this.placeChangedExplicitly = false;
+    this.placeIndex = ctx.matchedIndex;
     // 已有计划必须保留原 UTC：不经过任何 fromLocal 重算，也不自动选较早候选
     this.selectedUtc = plan.selectedUtc;
     this.timeMessage = '';
@@ -237,6 +250,11 @@ export struct PlannerPage {
     this.overlapOpen = false;
     this.overlapLabels = [];
     this.placeIndex = index;
+    if (this.editId.length > 0) {
+      this.placeChangedExplicitly = true;
+      this.placeDetached = false;
+      this.placeSnapshotNote = '';
+    }
     const place = this.places[index];
     const local = TimeUtil.toLocal(place.tzId, this.selectedUtc);
     if (!local.valid) {
@@ -248,21 +266,11 @@ export struct PlannerPage {
   }
 
   private async savePlan(): Promise<void> {
-    const place = this.currentPlace();
-    if (place === undefined) {
-      this.hint = '请先选择机位。';
-      return;
-    }
-    // 最终校验：时刻有限、机位合法、时区有效、属于目标当地日、GAP/OVERLAP 已解决
-    const bounds = TimeUtil.localDayBounds(place.tzId, this.pickedDate.getFullYear(),
-      this.pickedDate.getMonth() + 1, this.pickedDate.getDate());
-    const check: SaveCheck = TimeSelection.validateForSave(this.selectedUtc,
-      bounds.valid ? bounds.startUtc : NaN, bounds.valid ? bounds.endUtc : NaN,
-      place.latWgs84, place.lonWgs84, TimeUtil.isValidTimeZoneId(place.tzId),
-      this.timeEdited ? this.selection : null);
-    if (!check.ok) {
-      this.hint = check.errorText;
-      Dialogs.toast(this.getUIContext(), check.errorText);
+    const outcome: SavePlaceOutcome = PlanPlaceGuard.resolveSave(this.editCtx, this.placeIndex,
+      this.places, this.placeChangedExplicitly);
+    if (!outcome.ok) {
+      this.hint = outcome.reason;
+      Dialogs.toast(this.getUIContext(), outcome.reason);
       return;
     }
     try {
@@ -277,12 +285,25 @@ export struct PlannerPage {
         plan = new ShootPlan();
         plan.id = IdGen.next('sp');
       }
-      plan.placeId = place.id;
+      // 生效的机位信息：孤立计划沿用计划自带快照，绝不使用 places[0]
+      const tzId = outcome.useSnapshot ? plan.tzId : outcome.effective.tzId;
+      const lat = outcome.useSnapshot ? plan.latWgs84 : outcome.effective.latWgs84;
+      const lon = outcome.useSnapshot ? plan.lonWgs84 : outcome.effective.lonWgs84;
+      // 最终校验：时刻有限、机位合法、时区有效、属于目标当地日、GAP/OVERLAP 已解决
+      const bounds = TimeUtil.localDayBounds(tzId, this.pickedDate.getFullYear(),
+        this.pickedDate.getMonth() + 1, this.pickedDate.getDate());
+      const check: SaveCheck = TimeSelection.validateForSave(this.selectedUtc,
+        bounds.valid ? bounds.startUtc : NaN, bounds.valid ? bounds.endUtc : NaN,
+        lat, lon, TimeUtil.isValidTimeZoneId(tzId),
+        this.timeEdited ? this.selection : null);
+      if (!check.ok) {
+        this.hint = check.errorText;
+        Dialogs.toast(this.getUIContext(), check.errorText);
+        return;
+      }
+      // 只有明确换机位或机位仍存在时才写机位字段；孤立计划保留原始快照
+      PlanPlaceGuard.applyPlace(plan, outcome);
       plan.projectId = AppState.currentProjectId;
-      plan.placeName = place.name;
-      plan.latWgs84 = place.latWgs84;
-      plan.lonWgs84 = place.lonWgs84;
-      plan.tzId = place.tzId;
       plan.selectedUtc = this.selectedUtc;
       plan.targetAzimuth = SolarCalc.norm360(this.parse(this.azText, 180));
       plan.targetAltitude = this.parse(this.altText, 10);
@@ -295,11 +316,17 @@ export struct PlannerPage {
       await AppState.reloadData();
       this.plans = AppState.plans;
       this.editing = false;
+      this.placeDetached = false;
+      this.placeSnapshotNote = '';
+      this.placeChangedExplicitly = false;
       AppState.clearDirty();
-      this.hint = '已保存。';
-      Dialogs.toast(this.getUIContext(), '计划已保存');
+      this.hint = outcome.notice.length > 0 ? `已保存。${outcome.notice}` : '已保存。';
+      Dialogs.toast(this.getUIContext(), outcome.notice.length > 0
+        ? `计划已保存（${outcome.notice}）` : '计划已保存');
     } catch (err) {
+      // 保存失败绝不显示成功
       this.hint = `保存失败：${(err as Error).message}`;
+      Dialogs.toast(this.getUIContext(), `保存失败：${(err as Error).message}`);
     }
   }
 
@@ -442,6 +469,10 @@ export struct PlannerPage {
         }, (place: Place) => place.id)
       }
       .width('100%')
+
+      if (this.placeDetached) {
+        NoticeBar({ text: this.placeSnapshotNote })
+      }
 
       Text('日期')
         .fontSize(FontSize.BODY)
