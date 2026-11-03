@@ -209,6 +209,16 @@ score(window) = bestAzError / max(azTolerance, 1) + bestAltError / max(altTolera
 
 真机 `KernelPerfReal` 的门槛断言只覆盖「会话推进 + 状态设置」，不能当作 UI 交互性能证据。
 
+补记（设备解锁后执行，补丁版本 `b08601f` 安装包）：
+
+```text
+aa test -s class KernelPerfReal → Tests run: 2, Failure: 0, Error: 0, Pass: 2
+aa test -s class TimeZoneReal  → Tests run: 12, Failure: 0, Error: 0, Pass: 12
+```
+
+即补丁后的真机回归已通过；但 **UI 点击取消的端到端延迟** 与 **含让帧/Job 写入的整段搜索耗时**
+依然只有页面代码里的 `用时 N ms` 自述，未做独立的端到端测量，仍列为未验证。
+
 ## D. 提交清理
 
 `perf.log`（设备锁屏导致 `aa test` 启动失败的信息）已 `git rm --cached` 并加入 `.gitignore`
