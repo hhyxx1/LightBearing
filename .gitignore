@@ -18,3 +18,8 @@
 /unit-test.log
 /device-test.log
 /layout.json
+
+# 临时设备日志（含锁屏失败等运行期噪声，不入库）
+/perf.log
+*.log
+!/docs/**/*.log

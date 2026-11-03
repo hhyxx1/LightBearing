@@ -43,6 +43,9 @@ export class KernelContext {
     const p: SunPosition = ev !== undefined
       ? ev.positionAt(utcMs, this.latDeg, this.lonDeg)
       : SolarCalc.position(utcMs, this.latDeg, this.lonDeg);
+    if (!Number.isFinite(p.azimuthDeg) || !Number.isFinite(p.altitudeDeg)) {
+      this.stats.nonFiniteSamples++;
+    }
     this.cachedT = utcMs;
     this.cachedPos = p;
     return p;
@@ -129,7 +132,9 @@ export class KernelRunner {
     }
     let azContinuous = true;
     for (let i = 1; i < poses.length; i++) {
-      if (!Number.isFinite(poses[i].altitudeDeg) || !Number.isFinite(poses[i - 1].altitudeDeg)) {
+      // 任意关键采样非有限 → 不能作为经验剪枝依据，一律继续细分（保守）
+      if (!Number.isFinite(poses[i].altitudeDeg) || !Number.isFinite(poses[i - 1].altitudeDeg) ||
+        !Number.isFinite(poses[i].azimuthDeg) || !Number.isFinite(poses[i - 1].azimuthDeg)) {
         return 2;
       }
       if (poses[i].altitudeDeg > KernelRunner.ZENITH_LIMIT_DEG ||

@@ -37,6 +37,11 @@ export class SearchSession {
   private totalMs: number = 0;
   private currentRangeStartUtc: number = 0;
   private currentRangeEndUtc: number = 0;
+  /** 当前区间是否处于运行状态（不能靠「有没有命中」判断） */
+  private rangeActive: boolean = false;
+  /** 当前区间开始时的非有限采样计数（用于识别不可靠区间） */
+  private rangeNonFiniteStart: number = 0;
+  private unreliableRanges: number = 0;
 
   constructor(goal: SearchGoal, thresholds: LightThresholds, ranges: DayRange[],
     evaluator?: SolarPositionEvaluator, stats?: KernelStats) {
@@ -79,6 +84,11 @@ export class SearchSession {
 
   getError(): string {
     return this.error;
+  }
+
+  /** 因太阳位置非有限而无法判定的区间数量 */
+  getUnreliableRanges(): number {
+    return this.unreliableRanges;
   }
 
   /** 已完成的窗口（可能只是部分结果，配合 getState() 使用） */
@@ -129,6 +139,14 @@ export class SearchSession {
 
   /** 结束当前区间：把跨度聚合成窗口并入结果 */
   private finishRange(): void {
+    // 区间内没有有效跨度、但出现过非有限太阳位置 → 不能当作「没有拍摄机会」
+    if (this.spanList.length === 0 &&
+      this.ctx.stats.nonFiniteSamples > this.rangeNonFiniteStart) {
+      this.unreliableRanges++;
+      this.state = SessionState.FAILED;
+      this.error = '太阳位置出现非有限值（NaN/Infinity），该日期不能判定为无拍摄机会，请重新搜索';
+    }
+    this.rangeActive = false;
     if (this.spanList.length > 0) {
       const part = this.runner.buildWindows(this.spanList);
       for (const w of part) {
@@ -155,9 +173,12 @@ export class SearchSession {
         return false;
       }
       if (this.stack.length === 0) {
-        // 上一段处理完 → 收尾并推进到下一段
-        if (this.rangeIndex > 0 || this.spanList.length > 0) {
+        // 上一段处理完 → 收尾并推进到下一段（依据区间运行状态，而不是有没有命中）
+        if (this.rangeActive) {
           this.finishRange();
+          if (this.state !== SessionState.RUNNING) {
+            return true;
+          }
         }
         if (this.rangeIndex >= this.ranges.length) {
           this.state = SessionState.DONE;
@@ -170,6 +191,8 @@ export class SearchSession {
         }
         this.currentRangeStartUtc = r.startUtc;
         this.currentRangeEndUtc = r.endUtc;
+        this.rangeActive = true;
+        this.rangeNonFiniteStart = this.ctx.stats.nonFiniteSamples;
         this.stack.push(r.startUtc);
         this.stack.push(r.endUtc);
         this.stack.push(0);

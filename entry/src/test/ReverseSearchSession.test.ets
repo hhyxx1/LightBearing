@@ -33,6 +33,33 @@ function perfectGoal(): SearchGoal {
   return g;
 }
 
+/** 按时刻映射到指定误差的求值器（用于验证排序与复验） */
+class KeyedErrorEvaluator implements SolarPositionEvaluator {
+  private keys: number[] = [];
+  private azValues: number[] = [];
+  private altValues: number[] = [];
+
+  add(utcMs: number, az: number, alt: number): void {
+    this.keys.push(utcMs);
+    this.azValues.push(az);
+    this.altValues.push(alt);
+  }
+
+  positionAt(utcMs: number, latDeg: number, lonDeg: number): SunPosition {
+    const p = new SunPosition();
+    for (let i = 0; i < this.keys.length; i++) {
+      if (this.keys[i] === utcMs) {
+        p.azimuthDeg = this.azValues[i];
+        p.altitudeDeg = this.altValues[i];
+        return p;
+      }
+    }
+    p.azimuthDeg = 180;
+    p.altitudeDeg = 10;
+    return p;
+  }
+}
+
 function fakeWindow(start: number, end: number, best: number, azErr: number, altErr: number): ShootWindow {
   const w = new ShootWindow();
   w.startUtc = start;
@@ -135,21 +162,26 @@ export default function reverseSearchSessionTest() {
         fakeWindow(SH_START + 4 * HOUR, SH_START + 5 * HOUR, SH_START + 4 * HOUR + 60000, 0.3, 0.3)
       ];
       const ranges: DayRange[] = [DayRange.of(SH_START, SH_END)];
+      const ev = new KeyedErrorEvaluator();
+      ev.add(SH_START + 60000, 180.5, 10.5);
+      ev.add(SH_START + 2 * HOUR + 60000, 180.1, 10.1);
+      ev.add(SH_START + 4 * HOUR + 60000, 180.3, 10.3);
       const a1 = ReverseSearch.finalizeWindows(goal, LightThresholds.defaults(), raw,
-        WindowSortMode.BEST, 2, undefined, new KernelStats(), ranges);
+        WindowSortMode.BEST, 2, ev, new KernelStats(), ranges);
       const a2 = ReverseSearch.finalizeWindows(goal, LightThresholds.defaults(), raw,
-        WindowSortMode.BEST, 2, undefined, new KernelStats(), ranges);
+        WindowSortMode.BEST, 2, ev, new KernelStats(), ranges);
       expect(a1.windows.length).assertEqual(2);
-      expect(a1.windows[0].bestAzError).assertEqual(0.1);
+      // 最优在前：0.1/0.1 的窗口
+      expect(a1.windows[0].bestUtc).assertEqual(SH_START + 2 * HOUR + 60000);
       expect(a1.windows[0].bestUtc).assertEqual(a2.windows[0].bestUtc);
       expect(a1.windows[1].bestUtc).assertEqual(a2.windows[1].bestUtc);
       const k1 = ReverseSearch.finalizeWindows(goal, LightThresholds.defaults(), raw,
-        WindowSortMode.BEST, 1, undefined, new KernelStats(), ranges);
+        WindowSortMode.BEST, 1, ev, new KernelStats(), ranges);
       expect(k1.windows.length).assertEqual(1);
-      expect(k1.windows[0].bestAzError).assertEqual(0.1);
+      expect(k1.windows[0].bestUtc).assertEqual(SH_START + 2 * HOUR + 60000);
       expect(k1.totalBeforeCut).assertEqual(3);
       const k30 = ReverseSearch.finalizeWindows(goal, LightThresholds.defaults(), raw,
-        WindowSortMode.BEST, 30, undefined, new KernelStats(), ranges);
+        WindowSortMode.BEST, 30, ev, new KernelStats(), ranges);
       expect(k30.windows.length).assertEqual(3);
     });
 
@@ -161,10 +193,14 @@ export default function reverseSearchSessionTest() {
         fakeWindow(SH_START, SH_START + HOUR, SH_START + 60000, 0.1, 4.8),
         fakeWindow(SH_START + 2 * HOUR, SH_START + 3 * HOUR, SH_START + 2 * HOUR + 60000, 0.4, 0.4)
       ];
+      const ev = new KeyedErrorEvaluator();
+      ev.add(SH_START + 60000, 180.1, 14.8);
+      ev.add(SH_START + 2 * HOUR + 60000, 180.4, 10.4);
       const out = ReverseSearch.finalizeWindows(goal, LightThresholds.defaults(), raw,
-        WindowSortMode.BEST, 2, undefined, new KernelStats(), [DayRange.of(SH_START, SH_END)]);
-      expect(out.windows[0].bestAzError).assertEqual(0.4);
-      expect(out.windows[0].bestAltError).assertEqual(0.4);
+        WindowSortMode.BEST, 2, ev, new KernelStats(), [DayRange.of(SH_START, SH_END)]);
+      // 归一化后 0.4/0.4（0.8+0.08）优于 0.1/4.8（0.2+0.96）
+      expect(out.windows[0].bestUtc).assertEqual(SH_START + 2 * HOUR + 60000);
+      expect(Math.abs(out.windows[0].bestAzError - 0.4) < 0.001).assertTrue();
     });
 
     it('invalid_parameters_rejected_not_no_hit', 0, () => {

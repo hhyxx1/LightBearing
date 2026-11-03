@@ -42,5 +42,7 @@ export class KernelStats {
   empiricalInvalidChunks: number = 0;
   /** 落到 1 秒分辨率叶子的数量（数值近似边界） */
   resolutionLeaves: number = 0;
+  /** 求值器返回非有限位置（NaN/Infinity）的采样次数：不可作为「无命中」证据 */
+  nonFiniteSamples: number = 0;
   windowCount: number = 0;
 }

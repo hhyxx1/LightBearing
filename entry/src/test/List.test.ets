@@ -7,6 +7,7 @@ import timelineTest from './Timeline.test';
 import timeSelectionTest from './TimeSelection.test';
 import reverseSearchBaselineTest from './ReverseSearchBaseline.test';
 import reverseSearchSessionTest from './ReverseSearchSession.test';
+import searchSessionRegressionTest from './SearchSessionRegression.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -18,4 +19,5 @@ export default function testsuite() {
   timeSelectionTest();
   reverseSearchBaselineTest();
   reverseSearchSessionTest();
+  searchSessionRegressionTest();
 }

@@ -167,3 +167,49 @@ score(window) = bestAzError / max(azTolerance, 1) + bestAltError / max(altTolera
 3. 评估变化率上界的正式误差界（至少给出近天顶的保守处理证明或明确标注为近似）；
 4. 若需要模式 B，再增加有语义的 UI 切换（配额规则先定）；
 5. 把「保存到计划」与窗口模型统一（当前仍用 bestUtc 落库，窗口区间未持久化）。
+
+---
+
+# 复审补丁（2026-11-03）
+
+## A. 已修复缺陷与红灯证据
+
+修复前（保留的红灯证据）：`Tests run: 129, Failure: 7` ——
+`single_range_without_hits_terminates`、`first_range_empty_then_second_range_has_hits`、
+`three_ranges_all_empty_terminate`、`many_empty_ranges_terminate_within_step_cap`、
+`merge_only_when_truly_touching`、`non_finite_positions_are_not_reported_as_no_hit`、
+`finalize_rejects_window_whose_best_does_not_match_reported_errors`。
+
+修复后：`Tests run: 129, Failure: 0, Error: 0, Pass: 129`。
+
+| # | 缺陷 | 根因 | 修复 |
+|---|---|---|---|
+| 1 | 无命中的第一个区间不推进，导致反复重扫同一天 | `if (rangeIndex > 0 \|\| spanList.length > 0) finishRange()` 用「是否第一天/有没有命中」判断收尾 | 新增显式 `rangeActive` 状态：进入区间置 true，`stack` 空且 `rangeActive` 时必定 `finishRange()`；与命中与否无关 |
+| 2 | 合并边界 `+1` 会跨过 1ms 真实无效间隔 | `w.startUtc <= last.endUtc + 1` | 改为 `w.startUtc <= last.endUtc`：只有真正相接（半开区间首尾重合）或重叠才合并；1ms / 10ms / 1s 间隔都保持两个窗口 |
+| 3 | 太阳方位角 NaN/Infinity 被当成「比较失败 → 无效」 | `classify()` 只检查 `altitudeDeg` 有限性 | 任意关键采样（含 `azimuthDeg`）非有限 → 一律「继续细分」（保守）；`KernelStats.nonFiniteSamples` 计数；**区间内无有效跨度但出现过非有限位置** → 会话置 `FAILED` 并给出明确错误，不再伪装成「没有拍摄机会」 |
+| 4 | `finalizeWindows` 只检查 `bestUtc` 是否在区间内 | 未复核声明的误差 | 在 `bestUtc` 用同一求值器复算实际位置，校验双容差 / `daylightOnly` / 有限性，并用真实值覆盖声明误差；复算不通过则重算窗口，仍不通过计入 `SearchOutcome.droppedInvalid` |
+
+## B. 新增测试（9 条）
+
+无命中单区间终止、首区间无命中后区间有命中、三区间全无命中、首命中后无命中、
+365 个全无命中区间（步数上限保护）、合并边界（相接 / 1ms / 10ms / 1s）、
+非有限位置的显式失败、finalize 拒绝不一致窗口，以及原有会话/评分用例迁移到「按时刻映射误差」的求值器。
+
+## C. 取消与性能指标的措辞更正
+
+之前报告中「取消延迟 0ms」**只是会话状态设置的耗时**，不等于用户感知的响应延迟。区分如下：
+
+| 指标 | 状态 | 数值 |
+|---|---|---|
+| 会话取消状态设置（`session.cancel()`） | 已测（真机） | 0 ms |
+| 单分片最大计算耗时（`step(8)`） | 已测（真机） | 6 / 8 / 11 ms（1 / 14 / 365 天） |
+| 搜索会话自身推进总耗时（不含页面） | 已测（真机） | 6 ms / 65 ms / 3 511 ms |
+| **UI 点击「取消」→ 搜索真正停止** | **未测** | 需要真机点击 + 观察，而未做，不得用 0ms 代替 |
+| **含让帧（`nextFrame`）与 `AppDb.updateJob` 的端到端搜索耗时** | **未测** | 页面循环每片都写 Job + 让帧，真实总耗时必然大于会话耗时 |
+
+真机 `KernelPerfReal` 的门槛断言只覆盖「会话推进 + 状态设置」，不能当作 UI 交互性能证据。
+
+## D. 提交清理
+
+`perf.log`（设备锁屏导致 `aa test` 启动失败的信息）已 `git rm --cached` 并加入 `.gitignore`
+（同时忽略 `*.log`，`docs/**/*.log` 例外）；失败记录已整理进本文档，根目录不再积累临时日志。

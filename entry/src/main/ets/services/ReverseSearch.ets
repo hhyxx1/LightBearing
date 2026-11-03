@@ -46,6 +46,8 @@ export class SearchOutcome {
   errorText: string = '';
   /** 是否未跑完（取消/预算耗尽） */
   incomplete: boolean = false;
+  /** 后处理阶段被拒绝的窗口数（位置与双容差不一致、best 越界等） */
+  droppedInvalid: number = 0;
 }
 
 /**
@@ -178,7 +180,8 @@ export class ReverseSearch {
         continue;
       }
       const last = merged.length > 0 ? merged[merged.length - 1] : undefined;
-      if (last !== undefined && w.startUtc <= last.endUtc + 1) {
+      // 只有真正相接（半开区间首尾重合）或重叠才合并；1ms 及以上的间隔是真实无效时间，不合并
+      if (last !== undefined && w.startUtc <= last.endUtc) {
         last.endUtc = Math.max(last.endUtc, w.endUtc);
         last.valid = false; // 边界变了，需要重新求 best
       } else {
@@ -215,6 +218,40 @@ export class ReverseSearch {
         }
         continue;
       }
+      finalWindows.push(w);
+    }
+    // 逐个复验：best 时刻的实际太阳位置必须与声明的误差一致，且满足双容差
+    const verified: ShootWindow[] = [];
+    for (const w of finalWindows) {
+      const p = ctx.positionAt(w.bestUtc);
+      let ok = Number.isFinite(p.azimuthDeg) && Number.isFinite(p.altitudeDeg) &&
+        w.bestUtc >= w.startUtc && w.bestUtc < w.endUtc;
+      if (ok) {
+        const azErr = SolarCalc.angularDistance(p.azimuthDeg, goal.azimuthTarget);
+        const altErr = Math.abs(p.altitudeDeg - goal.altitudeTarget);
+        ok = azErr <= goal.azTolerance && altErr <= goal.altTolerance &&
+          (!goal.daylightOnly || p.altitudeDeg > -0.833);
+        if (ok) {
+          // 用真实位置覆盖声明值，避免上游传入不一致的误差
+          w.bestAzimuth = p.azimuthDeg;
+          w.bestAltitude = p.altitudeDeg;
+          w.bestAzError = azErr;
+          w.bestAltError = altErr;
+        }
+      }
+      if (!ok) {
+        const rechecked = runner.makeWindow(w.startUtc, w.endUtc);
+        if (rechecked.valid) {
+          verified.push(rechecked);
+        } else {
+          out.droppedInvalid++;
+        }
+        continue;
+      }
+      verified.push(w);
+    }
+    finalWindows.length = 0;
+    for (const w of verified) {
       finalWindows.push(w);
     }
     out.totalBeforeCut = finalWindows.length;
