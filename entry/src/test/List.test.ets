@@ -9,6 +9,7 @@ import reverseSearchBaselineTest from './ReverseSearchBaseline.test';
 import reverseSearchSessionTest from './ReverseSearchSession.test';
 import searchSessionRegressionTest from './SearchSessionRegression.test';
 import searchRunPolicyTest from './SearchRunPolicy.test';
+import searchAnomalyAuditTest from './SearchAnomalyAudit.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -22,4 +23,5 @@ export default function testsuite() {
   reverseSearchSessionTest();
   searchSessionRegressionTest();
   searchRunPolicyTest();
+  searchAnomalyAuditTest();
 }
