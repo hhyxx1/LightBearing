@@ -38,18 +38,50 @@ export class Checksum {
     let hash = 0x811c9dc5;
     for (let i = 0; i < view.length; i++) {
       hash = hash ^ view[i];
-      hash = (hash * 0x01000193) >>> 0;
+      hash = Math.imul(hash, 0x01000193) >>> 0;
     }
     return `fnv1a:${hash.toString(16).padStart(8, '0')}`;
   }
 
-  static ofText(text: string): string {
-    let hash = 0x811c9dc5;
+  /** UTF-8 编码（与真实写盘字节一致，含代理对/表情符号） */
+  static encodeUtf8(text: string): Uint8Array {
+    const out: number[] = [];
     for (let i = 0; i < text.length; i++) {
-      hash = hash ^ (text.charCodeAt(i) & 0xFF);
-      hash = (hash * 0x01000193) >>> 0;
+      let cp: number = text.charCodeAt(i);
+      if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < text.length) {
+        const low: number = text.charCodeAt(i + 1);
+        if (low >= 0xDC00 && low <= 0xDFFF) {
+          cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+          i++;
+        }
+      }
+      if (cp < 0x80) {
+        out.push(cp);
+      } else if (cp < 0x800) {
+        out.push(0xC0 | (cp >> 6));
+        out.push(0x80 | (cp & 0x3F));
+      } else if (cp < 0x10000) {
+        out.push(0xE0 | (cp >> 12));
+        out.push(0x80 | ((cp >> 6) & 0x3F));
+        out.push(0x80 | (cp & 0x3F));
+      } else {
+        out.push(0xF0 | (cp >> 18));
+        out.push(0x80 | ((cp >> 12) & 0x3F));
+        out.push(0x80 | ((cp >> 6) & 0x3F));
+        out.push(0x80 | (cp & 0x3F));
+      }
     }
-    return `fnv1a:${hash.toString(16).padStart(8, '0')}`;
+    const bytes = new Uint8Array(out.length);
+    for (let i = 0; i < out.length; i++) {
+      bytes[i] = out[i];
+    }
+    return bytes;
+  }
+
+  /** 文本校验和：必须与实际写出的 UTF-8 字节一致（不能用 UTF-16 code unit 近似） */
+  static ofText(text: string): string {
+    const bytes = Checksum.encodeUtf8(text);
+    return Checksum.ofBytes(bytes.buffer as ArrayBuffer);
   }
 }
 
@@ -86,6 +118,17 @@ export class ExportService {
     }
   }
 
+  /** 构造真实写出的字节：UTF-8 + BOM（测试与 writeText 共用，避免两套实现漂移） */
+  static buildUtf8File(content: string): Uint8Array {
+    const body = Checksum.encodeUtf8(content);
+    const withBom = new Uint8Array(body.length + 3);
+    withBom[0] = 0xEF;
+    withBom[1] = 0xBB;
+    withBom[2] = 0xBF;
+    withBom.set(body, 3);
+    return withBom;
+  }
+
   static async writeText(context: common.UIAbilityContext, fileName: string, content: string): Promise<ExportResult> {
     try {
       const options: picker.DocumentSaveOptions = {
@@ -97,14 +140,26 @@ export class ExportService {
         return ExportResult.fail('已取消保存');
       }
       const uri = uris[0];
-      const file = fileIo.openSync(uri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
-      const bytes = fileIo.writeSync(file.fd, content);
-      fileIo.closeSync(file);
+      // UTF-8 + BOM：满足 Excel 对中文 CSV 的识别；校验和基于真实写出字节
+      const withBom = ExportService.buildUtf8File(content);
+      let written = 0;
+      let file: fileIo.File | undefined = undefined;
+      try {
+        file = fileIo.openSync(uri, fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+        written = fileIo.writeSync(file.fd, withBom.buffer as ArrayBuffer);
+      } finally {
+        if (file !== undefined) {
+          fileIo.closeSync(file);
+        }
+      }
+      if (written !== withBom.length) {
+        return ExportResult.fail(`写入不完整：期望 ${withBom.length} 字节，实际 ${written} 字节`);
+      }
       const r = new ExportResult();
       r.ok = true;
       r.uri = uri;
-      r.bytes = bytes;
-      r.checksum = Checksum.ofText(content);
+      r.bytes = withBom.length;
+      r.checksum = Checksum.ofBytes(withBom.buffer as ArrayBuffer);
       return r;
     } catch (err) {
       const e = err as BusinessError;

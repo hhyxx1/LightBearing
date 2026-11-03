@@ -42,6 +42,19 @@ export class SavePlaceOutcome {
  * 4. 机位列表为空且用户仍要求换机位 → 拒绝保存并说明原因。
  */
 export class PlanPlaceGuard {
+  /**
+   * 保存前的一致性检查：编辑已有计划时，如果记录已不存在，必须中止而不是静默重建。
+   * @param editId 正在编辑的计划 ID（空串表示新建）
+   * @param found 数据库中是否仍能读到该计划
+   * @returns 空串表示可以继续；否则为需要提示用户的原因
+   */
+  static requireExistingPlan(editId: string, found: boolean): string {
+    if (editId.length > 0 && !found) {
+      return '该计划已被删除或不存在，无法保存。请返回列表刷新后重试。';
+    }
+    return '';
+  }
+
   static resolveEdit(places: Place[], plan: ShootPlan): EditPlaceContext {
     const ctx = new EditPlaceContext();
     ctx.snapshot.placeId = plan.placeId;

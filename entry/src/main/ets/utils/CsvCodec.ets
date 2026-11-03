@@ -35,7 +35,9 @@ export class CsvCodec {
   /** 解析 CSV（用于测试与回读校验；不支持跨行字段以外的复杂引号规则之外的扩展） */
   static parse(text: string): string[][] {
     const rows: string[][] = [];
-    const normalized = text.split('\r\n').join('\n');
+    // 导出文件带 UTF-8 BOM：解析前剥离，避免被当成第一列表头内容
+    const withoutBom: string = text.charCodeAt(0) === 0xFEFF ? text.substring(1) : text;
+    const normalized = withoutBom.split('\r\n').join('\n');
     const lines: string[] = normalized.split('\n');
     for (const line of lines) {
       if (line.length === 0) {

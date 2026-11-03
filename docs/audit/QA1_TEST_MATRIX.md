@@ -71,7 +71,7 @@
 | 搜索中切换机位 | 宿主 pure policy + 源码 | PASS（逻辑） | `STALE` 不覆盖 FAILED/CANCELLED，结果丢弃 |
 | 结果加入拍摄计划 | 源码 | PASS（源码） | 用 `bestUtc` 建计划，未做真机点击验证 |
 | 异常数据混合（部分 NaN） | 宿主机 `SearchAnomalyAudit` | **PASS（QA-2A 修复）** | A1/A2/A4/A5 现在均为 FAILED + 部分窗口；A7 取消仍 CANCELLED |
-| 一对一窗口参考匹配 | — | **NOT_RUN** | QA-07 |
+| 一对一窗口参考匹配 | 宿主机真实内核 + 1 秒独立参考（7 场景） | **HOST_PASS（QA-2B）** | 对称/极短/非对称/宽容差/无命中/高纬/0-360 全部一对一匹配，起点终点误差 ≤2 s，拆分/合并 0 |
 
 ## 6. 其他页面
 
@@ -103,8 +103,8 @@
 | 任务取消不留 DONE | 宿主 policy + 源码 | PASS | `CANCELLED` 语义 + 不写成功历史 |
 | 升级保留数据 | — | NOT_RUN | 未做迁移测试 |
 | 导入异常数据 | — | NOT_RUN | 未做导入注入测试 |
-| CSV 导出编码 | 源码 | **FAIL** | QA-05（无 BOM，Excel 中文风险） |
-| CSV 引号转义 | 源码 `CsvCodec` | PASS（源码） | 双引号转义规则完整 |
+| CSV 导出编码 | 宿主机字节级测试 7 条 | **HOST_PASS（QA-2B 修复）** | BOM `EF BB BF` + UTF-8 字节校验和 + `Math.imul` 修正 FNV-1a；解析剥离 BOM |
+| CSV 引号转义 | 宿主机往返测试 | HOST_PASS | 逗号/引号往返一致 |
 
 ## 8. 安全与隐私
 
@@ -152,3 +152,22 @@
 > **QA-2A 更新**：新增 `PlanPlaceGuard.test.ets`（8 条）、`ReverseViewState.test.ets`（8 条）、
 > `SearchAnomalyAudit` 迁移+A7（9 条）。宿主机总数 146 → **163/163 通过**；
 > 真机本次构建安装后执行 `KernelPerfReal` 2/2、`TimeZoneReal` 12/12（均为真机执行）。
+
+---
+
+## QA-2B 证据分级与更新
+
+证据标签：`CODE_REVIEWED`（仅源码核查）/ `HOST_PASS`（宿主机执行）/ `DEVICE_PASS`（真机执行）/ `E2E_PASS`（真实 UI 流程）/ `NOT_RUN` / `BLOCKED` / `FAIL`。
+
+| 项目 | 证据等级 | 说明 |
+|---|---|---|
+| 搜索状态重置（IDLE/RUNNING/FINAL） | HOST_PASS | `ReverseViewState.test.ets` 10 条 |
+| 计划记录消失守卫 | HOST_PASS | `PlanPlaceGuard.test.ets` 10 条 |
+| CSV 字节/BOM/校验和 | HOST_PASS | `ExportBytes.test.ets` 7 条，含独立 BigInt FNV-1a 对照 |
+| 窗口一对一匹配 | HOST_PASS | `WindowMatching.test.ets` 7 场景，真实内核 + 1 秒参考 |
+| 搜索按钮/取消按钮稳定 ID | CODE_REVIEWED | 已加 `reverse_search_btn` / `reverse_summary` / `progress_cancel_btn` |
+| UI 端到端搜索与取消 | BLOCKED | dumpLayout 不暴露自研 ID；文本定位受滚动影响 |
+| 真机主要页面截图 | DEVICE_PASS（仅采集） | 5 张（首页/反向寻光/计划/轨迹/更多）；逐页视觉审查 NOT_RUN |
+| KernelPerfReal / TimeZoneReal | DEVICE_PASS（e69131b 构建） | 本轮未重跑，不作为本轮执行证据 |
+
+宿主机总数：**181/181 通过**。

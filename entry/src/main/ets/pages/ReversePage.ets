@@ -93,7 +93,7 @@ export struct ReversePage {
   /** 页面渲染状态：与测试共用同一份纯逻辑 */
   private viewState(): ReverseViewState {
     return ReverseViewState.of(this.initErrorText.length > 0, this.ready, this.hasPlace,
-      this.lastDecision, this.candidates.length);
+      this.searching, this.searched, this.lastDecision, this.candidates.length);
   }
 
   private async nextFrame(): Promise<void> {
@@ -120,6 +120,9 @@ export struct ReversePage {
     this.windowNotes = [];
     this.errorText = '';
     this.partialResults = false;
+    // 完全重置上一轮终态：未结束前不展示旧警示/旧结果/旧空态
+    this.searched = false;
+    this.lastDecision = new RunDecision();
     this.summary = '';
     this.sheetVisible = true;
     this.sheetPercent = 0;
@@ -392,6 +395,7 @@ export struct ReversePage {
             .constraintSize({ minHeight: MIN_TOUCH })
 
             Button(this.searching ? '正在搜索…' : '搜索候选时段')
+              .id('reverse_search_btn')
               .type(ButtonType.Normal)
               .width('100%')
               .height(MIN_TOUCH)
@@ -429,6 +433,7 @@ export struct ReversePage {
               }
               .width('100%')
               NoticeBar({ text: this.summary })
+                .id('reverse_summary')
 
               if (this.candidates.length === 0) {
                 Text('在该容差与日期范围内没有满足条件的时刻。可以放宽容差、增加天数，或调整目标角。')

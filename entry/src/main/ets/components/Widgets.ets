@@ -866,6 +866,7 @@ export struct ProgressSheet {
     if (this.visible) {
       Column() {
         Column({ space: Spacing.M }) {
+
           Text(this.sheetTitle)
             .fontSize(FontSize.BODY_L)
             .fontWeight(FontWeight.Medium)
@@ -888,6 +889,7 @@ export struct ProgressSheet {
           .width('100%')
           if (this.cancellable) {
             Button('取消任务')
+            .id('progress_cancel_btn')
               .type(ButtonType.Normal)
               .width('100%')
               .height(MIN_TOUCH)

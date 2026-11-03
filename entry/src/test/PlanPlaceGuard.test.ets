@@ -136,6 +136,17 @@ export default function planPlaceGuardTest() {
       expect(outcome.reason.indexOf('请先选择机位') >= 0).assertTrue();
     });
 
+    it('editing_plan_that_vanished_is_blocked_not_recreated', 0, () => {
+      const missing: string = PlanPlaceGuard.requireExistingPlan('plan-1', false);
+      expect(missing.length > 0).assertTrue();
+      expect(missing.indexOf('已被删除') >= 0).assertTrue();
+    });
+
+    it('editing_existing_or_new_plan_is_allowed', 0, () => {
+      expect(PlanPlaceGuard.requireExistingPlan('plan-1', true).length).assertEqual(0);
+      expect(PlanPlaceGuard.requireExistingPlan('', false).length).assertEqual(0);
+    });
+
     it('matched_plan_normal_save_keeps_values', 0, () => {
       const places: Place[] = [place('a', '上海', 31.2304, 121.4737, 'Asia/Shanghai')];
       const plan = planWith('a', '上海', 31.2304, 121.4737, 'Asia/Shanghai', UTC0);

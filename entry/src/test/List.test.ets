@@ -12,6 +12,8 @@ import searchRunPolicyTest from './SearchRunPolicy.test';
 import searchAnomalyAuditTest from './SearchAnomalyAudit.test';
 import reverseViewStateTest from './ReverseViewState.test';
 import planPlaceGuardTest from './PlanPlaceGuard.test';
+import exportBytesTest from './ExportBytes.test';
+import windowMatchingTest from './WindowMatching.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -28,4 +30,6 @@ export default function testsuite() {
   searchAnomalyAuditTest();
   reverseViewStateTest();
   planPlaceGuardTest();
+  exportBytesTest();
+  windowMatchingTest();
 }

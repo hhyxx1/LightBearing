@@ -277,10 +277,14 @@ export struct PlannerPage {
       let plan: ShootPlan;
       if (this.editId.length > 0) {
         const found = await AppDb.getPlan(this.editId);
-        plan = found === undefined ? new ShootPlan() : found;
-        if (found === undefined) {
-          plan.id = this.editId;
+        const missing: string = PlanPlaceGuard.requireExistingPlan(this.editId, found !== undefined);
+        if (missing.length > 0) {
+          // 编辑期间计划被删除：不静默重建同 ID 的残缺记录
+          this.hint = missing;
+          Dialogs.toast(this.getUIContext(), missing);
+          return;
         }
+        plan = found as ShootPlan;
       } else {
         plan = new ShootPlan();
         plan.id = IdGen.next('sp');

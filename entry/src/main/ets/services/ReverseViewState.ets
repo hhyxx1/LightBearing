@@ -10,7 +10,21 @@ import { RunDecision, RunKind } from './SearchRunPolicy';
  * 4. 正常无命中是正常空态，不是错误；
  * 5. 取消与失败不混用同一文案/动作。
  */
+/** 搜索阶段 */
+export class SearchPhase {
+  /** 尚未搜索过（或已重置） */
+  static readonly IDLE: number = 0;
+  /** 正在搜索：不展示上一轮任何警示/结果 */
+  static readonly RUNNING: number = 1;
+  /** 已结束（DONE_OK / DONE_EMPTY / FAILED / CANCELLED / STALE） */
+  static readonly FINAL: number = 2;
+}
+
 export class ReverseViewState {
+  /** 当前搜索阶段（IDLE / RUNNING / FINAL） */
+  phase: number = SearchPhase.IDLE;
+  /** 进度面板是否可见 */
+  showProgressPanel: boolean = false;
   /** 整页错误卡（仅初始化失败） */
   showInitErrorCard: boolean = false;
   /** 骨架屏 */
@@ -30,13 +44,30 @@ export class ReverseViewState {
   /** 正常空态提示（无命中且非失败） */
   showEmptyHint: boolean = false;
 
-  static of(initError: boolean, ready: boolean, hasPlace: boolean, decision: RunDecision,
-    windowCount: number): ReverseViewState {
+  static of(initError: boolean, ready: boolean, hasPlace: boolean, searching: boolean,
+    hasCompleted: boolean, decision: RunDecision, windowCount: number): ReverseViewState {
     const v = new ReverseViewState();
     v.showInitErrorCard = initError;
     v.showSkeleton = !initError && !ready;
     v.showNoPlace = !initError && ready && !hasPlace;
     v.showForm = !initError && ready && hasPlace;
+    v.showProgressPanel = v.showForm && searching;
+
+    if (searching) {
+      // 运行中：清掉上一轮的警示/部分结果/空态提示，避免与新一次搜索混在一起
+      v.phase = SearchPhase.RUNNING;
+      v.showSearchWarning = false;
+      v.showPartialBadge = false;
+      v.showResults = false;
+      v.allowAddToPlan = false;
+      v.showEmptyHint = false;
+      return v;
+    }
+    if (!hasCompleted) {
+      v.phase = SearchPhase.IDLE;
+      return v;
+    }
+    v.phase = SearchPhase.FINAL;
 
     const failed = decision.kind === RunKind.FAILED;
     const cancelled = decision.kind === RunKind.CANCELLED;
