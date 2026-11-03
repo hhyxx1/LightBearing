@@ -63,7 +63,10 @@ export class ReverseViewState {
       v.showEmptyHint = false;
       return v;
     }
-    if (!hasCompleted) {
+    // 从未搜索过才是 IDLE；已经执行过但抛异常（hasCompleted 还没来得及置位）也必须进入失败终态，
+    // 否则「搜索失败」的警示会被 IDLE 分支吞掉。
+    const looksTerminal = decision.kind === RunKind.FAILED || decision.errorText.length > 0;
+    if (!hasCompleted && !looksTerminal) {
       v.phase = SearchPhase.IDLE;
       return v;
     }

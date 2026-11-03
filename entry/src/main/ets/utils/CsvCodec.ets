@@ -6,12 +6,16 @@
  */
 export class CsvCodec {
   private static readonly QUOTE: string = '"';
+  private static readonly COMMA: string = ',';
+  private static readonly CR: string = '\r';
+  private static readonly LF: string = '\n';
+  private static readonly BOM: number = 0xFEFF;
 
   /** 单字段转义：含逗号、引号、换行时用双引号包裹并把内部引号翻倍 */
   static escape(cell: string): string {
-    const hasComma = cell.includes(',');
+    const hasComma = cell.includes(CsvCodec.COMMA);
     const hasQuote = cell.includes(CsvCodec.QUOTE);
-    const hasNewline = cell.includes('\n') || cell.includes('\r');
+    const hasNewline = cell.includes(CsvCodec.LF) || cell.includes(CsvCodec.CR);
     if (hasComma || hasQuote || hasNewline) {
       const doubled = cell.split(CsvCodec.QUOTE).join(`${CsvCodec.QUOTE}${CsvCodec.QUOTE}`);
       return `${CsvCodec.QUOTE}${doubled}${CsvCodec.QUOTE}`;
@@ -27,59 +31,77 @@ export class CsvCodec {
       for (const cell of row) {
         cells.push(CsvCodec.escape(cell));
       }
-      lines.push(cells.join(','));
+      lines.push(cells.join(CsvCodec.COMMA));
     }
     return lines.join('\r\n');
   }
 
-  /** 解析 CSV（用于测试与回读校验；不支持跨行字段以外的复杂引号规则之外的扩展） */
+  /**
+   * 解析 CSV：整篇状态机，**支持引号内的换行**（跨行字段不会被拆成多条记录）、
+   * CRLF 与 LF 两种行尾、双引号转义、空字段，以及开头的 UTF-8 BOM。
+   */
   static parse(text: string): string[][] {
     const rows: string[][] = [];
-    // 导出文件带 UTF-8 BOM：解析前剥离，避免被当成第一列表头内容
-    const withoutBom: string = text.charCodeAt(0) === 0xFEFF ? text.substring(1) : text;
-    const normalized = withoutBom.split('\r\n').join('\n');
-    const lines: string[] = normalized.split('\n');
-    for (const line of lines) {
-      if (line.length === 0) {
-        continue;
-      }
-      const cells: string[] = [];
-      let current = '';
-      let inQuote = false;
-      let i = 0;
-      while (i < line.length) {
-        const ch = line.charAt(i);
-        if (inQuote) {
-          if (ch === CsvCodec.QUOTE) {
-            if (i + 1 < line.length && line.charAt(i + 1) === CsvCodec.QUOTE) {
-              current += CsvCodec.QUOTE;
-              i += 2;
-              continue;
-            }
-            inQuote = false;
-            i++;
+    const src: string = text.charCodeAt(0) === CsvCodec.BOM ? text.substring(1) : text;
+    let row: string[] = [];
+    let cell: string = '';
+    let inQuote: boolean = false;
+    let i: number = 0;
+    while (i < src.length) {
+      const ch: string = src.charAt(i);
+      if (inQuote) {
+        if (ch === CsvCodec.QUOTE) {
+          if (i + 1 < src.length && src.charAt(i + 1) === CsvCodec.QUOTE) {
+            cell += CsvCodec.QUOTE;
+            i += 2;
             continue;
           }
-          current += ch;
+          inQuote = false;
           i++;
           continue;
         }
-        if (ch === CsvCodec.QUOTE) {
-          inQuote = true;
-          i++;
-          continue;
-        }
-        if (ch === ',') {
-          cells.push(current);
-          current = '';
-          i++;
-          continue;
-        }
-        current += ch;
+        // 引号内的换行属于字段内容
+        cell += ch;
         i++;
+        continue;
       }
-      cells.push(current);
-      rows.push(cells);
+      if (ch === CsvCodec.QUOTE) {
+        inQuote = true;
+        i++;
+        continue;
+      }
+      if (ch === CsvCodec.COMMA) {
+        row.push(cell);
+        cell = '';
+        i++;
+        continue;
+      }
+      if (ch === CsvCodec.CR) {
+        // CRLF 与孤立 CR 都视为行结束
+        if (i + 1 < src.length && src.charAt(i + 1) === CsvCodec.LF) {
+          i++;
+        }
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = '';
+        i++;
+        continue;
+      }
+      if (ch === CsvCodec.LF) {
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = '';
+        i++;
+        continue;
+      }
+      cell += ch;
+      i++;
+    }
+    if (cell.length > 0 || row.length > 0) {
+      row.push(cell);
+      rows.push(row);
     }
     return rows;
   }

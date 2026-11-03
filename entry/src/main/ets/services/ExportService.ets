@@ -55,6 +55,10 @@ export class Checksum {
           i++;
         }
       }
+      // 孤立代理项：按 Unicode 标量规则替换为 U+FFFD，绝不输出非法 UTF-8
+      if (cp >= 0xD800 && cp <= 0xDFFF) {
+        cp = 0xFFFD;
+      }
       if (cp < 0x80) {
         out.push(cp);
       } else if (cp < 0x800) {

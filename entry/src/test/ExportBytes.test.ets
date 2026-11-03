@@ -95,5 +95,46 @@ export default function exportBytesTest() {
       const back2 = CsvCodec.parse(withBom);
       expect(back2[0][0]).assertEqual('日期');
     });
+
+    it('csv_multiline_quoted_field_roundtrip', 0, () => {
+      // 引号内的换行属于同一字段，不能被拆成多条记录
+      const rows: string[][] = [['机位', '备注'], ['上海', '第一天拍摄\n第二天继续']];
+      const text = CsvCodec.build(rows);
+      const back = CsvCodec.parse(text);
+      expect(back.length).assertEqual(2);
+      expect(back[1][1]).assertEqual('第一天拍摄\n第二天继续');
+    });
+
+    it('csv_parses_lf_crlf_and_bom', 0, () => {
+      const lfRows = CsvCodec.parse('a,b\nc,d');
+      expect(lfRows.length).assertEqual(2);
+      expect(lfRows[0][0]).assertEqual('a');
+      const crlfRows = CsvCodec.parse('a,b\r\nc,d\r\n');
+      expect(crlfRows.length).assertEqual(2);
+      expect(crlfRows[1][1]).assertEqual('d');
+      const bomRows = CsvCodec.parse('\uFEFF日期,事件\r\n2026-11-03,日落');
+      expect(bomRows[0][0]).assertEqual('日期');
+    });
+
+    it('csv_keeps_empty_fields_and_quotes', 0, () => {
+      const rows: string[][] = [['a', '', 'c'], ['"quoted"', 'x,y', '']];
+      const back = CsvCodec.parse(CsvCodec.build(rows));
+      expect(back[0][1]).assertEqual('');
+      expect(back[1][0]).assertEqual('"quoted"');
+      expect(back[1][1]).assertEqual('x,y');
+      expect(back[1][2]).assertEqual('');
+    });
+
+    it('utf8_replaces_lone_surrogates_with_fffd', 0, () => {
+      const lone = 'a' + String.fromCharCode(0xD800) + 'b';
+      const bytes = Checksum.encodeUtf8(lone);
+      expect(bytes.length).assertEqual(5);
+      expect(bytes[1]).assertEqual(0xEF);
+      expect(bytes[2]).assertEqual(0xBF);
+      expect(bytes[3]).assertEqual(0xBD);
+      const ok = Checksum.encodeUtf8('🙂');
+      expect(ok.length).assertEqual(4);
+      expect(ok[0]).assertEqual(0xF0);
+    });
   });
 }

@@ -124,5 +124,34 @@ export default function reverseViewStateTest() {
       expect(noPlace.showNoPlace).assertTrue();
       expect(noPlace.showForm).assertFalse();
     });
+
+    it('exception_run_shows_warning_even_before_completion_flag', 0, () => {
+      // 搜索过程中抛异常：页面可能来不及把 hasCompleted 置位，但必须进入失败终态并显示原因
+      const failed = decision(RunKind.FAILED, '搜索失败：创建任务失败', false, true);
+      const v = ReverseViewState.of(false, true, true, false, false, failed, 0);
+      expect(v.phase).assertEqual(SearchPhase.FINAL);
+      expect(v.showForm).assertTrue();
+      expect(v.showSearchWarning).assertTrue();
+      expect(v.showEmptyHint).assertFalse();
+      expect(v.showResults).assertFalse();
+      expect(v.allowAddToPlan).assertFalse();
+    });
+
+    it('exception_with_partial_windows_marks_partial_and_blocks_plan', 0, () => {
+      const failed = decision(RunKind.FAILED, '搜索失败：写入任务状态失败', true, true);
+      const v = ReverseViewState.of(false, true, true, false, false, failed, 2);
+      expect(v.phase).assertEqual(SearchPhase.FINAL);
+      expect(v.showSearchWarning).assertTrue();
+      expect(v.showResults).assertTrue();
+      expect(v.showPartialBadge).assertTrue();
+      expect(v.allowAddToPlan).assertFalse();
+    });
+
+    it('new_search_clears_previous_exception_warning', 0, () => {
+      const failed = decision(RunKind.FAILED, '搜索失败：创建任务失败', false, true);
+      const running = ReverseViewState.of(false, true, true, true, false, failed, 0);
+      expect(running.phase).assertEqual(SearchPhase.RUNNING);
+      expect(running.showSearchWarning).assertFalse();
+    });
   });
 }

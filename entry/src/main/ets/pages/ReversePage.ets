@@ -269,6 +269,8 @@ export struct ReversePage {
       this.lastDecision = new RunDecision();
       this.lastDecision.kind = RunKind.FAILED;
       this.lastDecision.errorText = this.errorText;
+      // 已执行过（即使异常）：进入失败终态，保证原因可见；表单保持可用
+      this.searched = true;
       try {
         await AppDb.updateJob(jobId, JobStatus.FAILED, this.sheetPercent, `${(err as Error).message}`);
       } catch (inner) {

@@ -95,7 +95,10 @@ class MatchReport {
   maxBestErrorMs: number = 0;
   invalidProd: number = 0;
   prodOverlap: number = 0;
+  /** best 质量差：生产 (azErr+altErr) − 参考 (azErr+altErr)，两侧同一公式 */
   refBestGap: number = 0;
+  /** 未匹配但时间上相邻（≤2s）的参考窗口数：仅诊断，不改变漏报统计 */
+  adjacentOnly: number = 0;
 }
 
 function overlapMs(a: ShootWindow, b: ShootWindow): number {
@@ -104,64 +107,76 @@ function overlapMs(a: ShootWindow, b: ShootWindow): number {
   return e > s ? e - s : 0;
 }
 
+/**
+ * 一对一匹配：**全局最大重叠优先**（所有重叠对按重叠时长降序贪心分配，双方各自只占一次）。
+ * 统计口径：
+ * - 只有「区间真正重叠」且被分配才算匹配；
+ * - 参考窗口没有重叠生产窗口 → 一律计入 missed（相邻只是诊断 adjacentOnly，不免除漏报）；
+ * - 拆分/合并只统计真正重叠（overlap > 0），不含邻近。
+ */
 function analyse(refs: ShootWindow[], prods: ShootWindow[]): MatchReport {
   const r = new MatchReport();
   r.refCount = refs.length;
   r.prodCount = prods.length;
-  const usedProd: boolean[] = [];
-  for (let i = 0; i < prods.length; i++) {
-    usedProd.push(false);
-  }
-  const assignedProd: number[] = [];
-  for (const ref of refs) {
-    let bestIdx = -1;
-    let bestOverlap = 0;
-    for (let i = 0; i < prods.length; i++) {
-      if (usedProd[i]) {
-        continue;
-      }
-      const ov = overlapMs(ref, prods[i]);
-      if (ov > bestOverlap) {
-        bestOverlap = ov;
-        bestIdx = i;
+  const pairs: number[][] = [];
+  for (let i = 0; i < refs.length; i++) {
+    for (let j = 0; j < prods.length; j++) {
+      const ov = overlapMs(refs[i], prods[j]);
+      if (ov > 0) {
+        pairs.push([ov, i, j]);
       }
     }
-    if (bestIdx < 0) {
-      // 没有重叠窗口：可能是完全漏报；若某生产窗口与它「相邻」则在诊断里体现
+  }
+  pairs.sort((a: number[], b: number[]) => b[0] - a[0]);
+  const refUsed: boolean[] = [];
+  const prodUsed: boolean[] = [];
+  for (let i = 0; i < refs.length; i++) {
+    refUsed.push(false);
+  }
+  for (let j = 0; j < prods.length; j++) {
+    prodUsed.push(false);
+  }
+  for (const pair of pairs) {
+    const ri = pair[1];
+    const pi = pair[2];
+    if (refUsed[ri] || prodUsed[pi]) {
+      continue;
+    }
+    refUsed[ri] = true;
+    prodUsed[pi] = true;
+    r.matched++;
+    r.maxStartErrorMs = Math.max(r.maxStartErrorMs, Math.abs(prods[pi].startUtc - refs[ri].startUtc));
+    r.maxEndErrorMs = Math.max(r.maxEndErrorMs, Math.abs(prods[pi].endUtc - refs[ri].endUtc));
+    r.maxBestErrorMs = Math.max(r.maxBestErrorMs, Math.abs(prods[pi].bestUtc - refs[ri].bestUtc));
+    const prodCost = prods[pi].bestAzError + prods[pi].bestAltError;
+    const refCost = refs[ri].bestAzError + refs[ri].bestAltError;
+    r.refBestGap = Math.max(r.refBestGap, prodCost - refCost);
+  }
+  for (let i = 0; i < refs.length; i++) {
+    if (!refUsed[i]) {
+      r.missed++;
       let adjacent = false;
       for (const p0 of prods) {
-        if (Math.abs(p0.startUtc - ref.endUtc) <= 2 * SEC ||
-          Math.abs(ref.startUtc - p0.endUtc) <= 2 * SEC) {
+        if (Math.abs(p0.startUtc - refs[i].endUtc) <= 2 * SEC ||
+          Math.abs(refs[i].startUtc - p0.endUtc) <= 2 * SEC) {
           adjacent = true;
           break;
         }
       }
-      if (!adjacent) {
-        r.missed++;
+      if (adjacent) {
+        r.adjacentOnly++;
       }
-      continue;
     }
-    usedProd[bestIdx] = true;
-    assignedProd.push(bestIdx);
-    r.matched++;
-    r.maxStartErrorMs = Math.max(r.maxStartErrorMs, Math.abs(prods[bestIdx].startUtc - ref.startUtc));
-    r.maxEndErrorMs = Math.max(r.maxEndErrorMs, Math.abs(prods[bestIdx].endUtc - ref.endUtc));
-    r.maxBestErrorMs = Math.max(r.maxBestErrorMs, Math.abs(prods[bestIdx].bestUtc - ref.bestUtc));
-    r.refBestGap = Math.max(r.refBestGap,
-      (prods[bestIdx].bestAzError + prods[bestIdx].bestAltError) -
-      (ref.bestAzError + ref.bestAltError));
   }
-  for (let i = 0; i < prods.length; i++) {
-    if (!usedProd[i]) {
+  for (let j = 0; j < prods.length; j++) {
+    if (!prodUsed[j]) {
       r.unmatchedProd++;
     }
   }
-  // 诊断用多对多关系
   for (const ref of refs) {
     let n = 0;
     for (const p of prods) {
-      if (overlapMs(ref, p) > 0 || Math.abs(p.startUtc - ref.endUtc) <= SEC ||
-        Math.abs(ref.startUtc - p.endUtc) <= SEC) {
+      if (overlapMs(ref, p) > 0) {
         n++;
       }
     }
@@ -192,6 +207,17 @@ function analyse(refs: ShootWindow[], prods: ShootWindow[]): MatchReport {
     }
   }
   return r;
+}
+
+function win(start: number, end: number, best: number, azErr: number, altErr: number): ShootWindow {
+  const w = new ShootWindow();
+  w.startUtc = start;
+  w.endUtc = end;
+  w.bestUtc = best;
+  w.bestAzError = azErr;
+  w.bestAltError = altErr;
+  w.valid = true;
+  return w;
 }
 
 export default function windowMatchingTest() {
@@ -300,6 +326,76 @@ export default function windowMatchingTest() {
       const r = analyse(refs, prods);
       expect(r.matched).assertEqual(r.refCount);
       expect(r.maxStartErrorMs <= 2 * SEC).assertTrue();
+    });
+
+    // ---- 匹配器本身的统计语义（合成窗口，不依赖太阳轨迹）----
+    it('synthetic_two_windows_1s_apart_count_as_missed', 0, () => {
+      const refs = [win(0, 10000, 5000, 0.1, 0.1)];
+      const prods = [win(11000, 21000, 16000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.matched).assertEqual(0);
+      expect(r.missed).assertEqual(1);       // 无重叠必须计入漏报
+      expect(r.adjacentOnly).assertEqual(1); // 相邻只是诊断
+      expect(r.unmatchedProd).assertEqual(1);
+    });
+
+    it('synthetic_one_ref_split_into_two_prods', 0, () => {
+      const refs = [win(0, 100000, 50000, 0.1, 0.1)];
+      const prods = [win(0, 50000, 25000, 0.1, 0.1), win(50000, 100000, 75000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.refCount).assertEqual(1);
+      expect(r.matched).assertEqual(1);
+      expect(r.missed).assertEqual(0);
+      expect(r.unmatchedProd).assertEqual(1);
+      expect(r.splitRefs).assertEqual(1);
+    });
+
+    it('synthetic_two_refs_merged_into_one_prod', 0, () => {
+      const refs = [win(0, 50000, 25000, 0.1, 0.1), win(50000, 100000, 75000, 0.1, 0.1)];
+      const prods = [win(0, 100000, 50000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.matched).assertEqual(1);
+      expect(r.missed).assertEqual(1);
+      expect(r.mergedRefs).assertEqual(1);
+    });
+
+    it('synthetic_prod_overlaps_two_refs_counts_merge', 0, () => {
+      const refs = [win(0, 50000, 25000, 0.1, 0.1), win(50000, 100000, 75000, 0.1, 0.1)];
+      const prods = [win(40000, 110000, 60000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.matched).assertEqual(1);
+      expect(r.missed).assertEqual(1);
+      expect(r.mergedRefs).assertEqual(1);
+    });
+
+    it('synthetic_missing_prod_counts_all_refs_missed', 0, () => {
+      const refs = [win(0, 10000, 5000, 0.1, 0.1), win(20000, 30000, 25000, 0.1, 0.1)];
+      const r = analyse(refs, []);
+      expect(r.missed).assertEqual(2);
+      expect(r.matched).assertEqual(0);
+      expect(r.adjacentOnly).assertEqual(0);
+    });
+
+    it('synthetic_shifted_boundaries_with_overlap_still_match', 0, () => {
+      const refs = [win(0, 10000, 5000, 0.1, 0.1)];
+      const prods = [win(9000, 20000, 12000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.matched).assertEqual(1);
+      expect(r.missed).assertEqual(0);
+      expect(r.maxStartErrorMs).assertEqual(9000);
+    });
+
+    it('synthetic_perfect_pairs_have_no_split_or_merge', 0, () => {
+      const refs = [win(0, 10000, 5000, 0.1, 0.1), win(20000, 30000, 25000, 0.1, 0.1)];
+      const prods = [win(0, 10000, 5000, 0.1, 0.1), win(20000, 30000, 25000, 0.1, 0.1)];
+      const r = analyse(refs, prods);
+      expect(r.matched).assertEqual(2);
+      expect(r.missed).assertEqual(0);
+      expect(r.unmatchedProd).assertEqual(0);
+      expect(r.splitRefs).assertEqual(0);
+      expect(r.mergedRefs).assertEqual(0);
+      expect(r.maxStartErrorMs).assertEqual(0);
+      expect(r.maxEndErrorMs).assertEqual(0);
     });
   });
 }
