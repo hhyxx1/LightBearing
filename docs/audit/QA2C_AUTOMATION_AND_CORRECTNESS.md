@@ -139,7 +139,7 @@ hdc shell uitest uiInput help
         （181 → 195：异常终态 3 条、匹配器合成 7 条、CSV 跨行/代理项 4 条）
 外围太阳参考：全部通过
 应用 HAP：BUILD SUCCESSFUL
-真机：本轮未重跑 KernelPerfReal / TimeZoneReal（无相关生产改动），不作为本轮执行证据
+真机（本轮构建安装后实际执行）：KernelPerfReal 2/2、TimeZoneReal 12/12
 ```
 
 ## 7. 本轮真正修复的缺陷
