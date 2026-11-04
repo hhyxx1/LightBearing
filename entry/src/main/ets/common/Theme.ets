@@ -31,6 +31,8 @@ export class Radius {
   static readonly STAT: number = 15;
   static readonly ICONBOX: number = 12;
   static readonly APPLOGO: number = 17;
+  /** 底部浮层 / 面板 */
+  static readonly SHEET: number = 24;
 }
 
 /** 设计稿字级：.eyebrow 12 / .subtitle 14 / .card h3 14 / .small 12 / .stat b 24 / .pagetitle 29-42
@@ -43,6 +45,8 @@ export class FontSize {
   static readonly BODY_L: number = 15;
   static readonly TITLE: number = 20;
   static readonly H1: number = 30;
+  /** 仪表大数字（首页方位/高度） */
+  static readonly DISPLAY: number = 36;
   static readonly HERO_H2: number = 22;
   static readonly STAT: number = 24;
   static readonly NAV: number = 13;
@@ -53,6 +57,15 @@ export const NAV_CAPTION_SIZE: number = 10;
 export const NAV_CAPTION_SPACING: number = 2;
 /** 设计稿 .eyebrow 字距 1.1 */
 export const EYEBROW_SPACING: number = 1.1;
+
+/**
+ * 动效时长（毫秒）：只影响视觉，不允许在动画回调里改写 UTC/进度/表单状态。
+ */
+export class Motion {
+  static readonly FAST: number = 120;
+  static readonly BASE: number = 200;
+  static readonly SLOW: number = 280;
+}
 
 /** 触控热区下限 */
 export const MIN_TOUCH: number = 44;

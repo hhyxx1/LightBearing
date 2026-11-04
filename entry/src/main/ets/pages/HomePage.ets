@@ -25,6 +25,8 @@ export struct HomePage {
   @State colors: ThemeColors = new ThemeColors();
   @State ready: boolean = false;
   @State errorText: string = '';
+  /** >=1200vp：三区工作台 */
+  @State isWide: boolean = false;
   @State showPermissionGate: boolean = false;
   @State locating: boolean = false;
   @State nowUtc: number = 0;
@@ -431,27 +433,206 @@ export struct HomePage {
     .width('100%')
   }
 
+
+  /** 顶部：页面标题 + 本地计算标识（替代大欢迎语） */
+  @Builder
+  slimHeader() {
+    Row({ space: Spacing.S }) {
+      Column({ space: Spacing.XS }) {
+        Text('今日光线')
+          .fontSize(FontSize.H1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.lb_ink'))
+        Text('太阳方位、轨迹与可拍时段')
+          .fontSize(FontSize.CAPTION)
+          .fontColor($r('app.color.lb_muted'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      Text('本地计算')
+        .fontSize(FontSize.CAPTION)
+        .fontColor($r('app.color.lb_primary'))
+        .padding({ left: Spacing.M, right: Spacing.M, top: Spacing.S, bottom: Spacing.S })
+        .borderRadius(Radius.CHIP)
+        .borderWidth(1)
+        .borderColor($r('app.color.lb_primary'))
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 机位条：机位名 + 当地日期/UTC 偏移 + 阶段 */
+  @Builder
+  stationHeader() {
+    Row({ space: Spacing.S }) {
+      Column({ space: Spacing.XS }) {
+        Text(this.placeName.length > 0 ? this.placeName : '未选择机位')
+          .fontSize(FontSize.HERO_H2)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.lb_ink'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${TimeUtil.formatDate(this.tzId, this.selectedUtc)} ${TimeUtil.weekdayLabel(TimeUtil.weekday(this.tzId, this.selectedUtc))} · ${TimeUtil.offsetLabel(this.tzId, this.selectedUtc)}`)
+          .fontSize(FontSize.CAPTION)
+          .fontColor($r('app.color.lb_muted'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      StatusBadge({ label: this.phaseLabel, tone: this.phaseValue === 5 ? 1 : 2 })
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  /** 当前光线仪表盘：方位/高度为主数字 */
+  @Builder
+  instrumentPanel() {
+    Column({ space: Spacing.M }) {
+      Row() {
+        Text('当前光线')
+          .fontSize(FontSize.CAPTION)
+          .fontColor($r('app.color.lb_muted'))
+          .layoutWeight(1)
+        Text(`${TimeUtil.formatTime(this.tzId, this.selectedUtc)} · ${TimeUtil.offsetLabel(this.tzId, this.selectedUtc)}`)
+          .fontSize(FontSize.CAPTION)
+          .fontColor($r('app.color.lb_muted'))
+      }
+      .width('100%')
+
+      Row({ space: Spacing.M }) {
+        Column({ space: Spacing.XS }) {
+          Text(`${this.posAz.toFixed(1)}°`)
+            .fontSize(FontSize.DISPLAY)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.lb_primary'))
+          Text(`方位 · ${SolarCalc.azimuthLabel(this.posAz)}`)
+            .fontSize(FontSize.SMALL)
+            .fontColor($r('app.color.lb_muted'))
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Column({ space: Spacing.XS }) {
+          Text(`${this.posAlt.toFixed(1)}°`)
+            .fontSize(FontSize.DISPLAY)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.lb_accent'))
+          Text('太阳高度角')
+            .fontSize(FontSize.SMALL)
+            .fontColor($r('app.color.lb_muted'))
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Column({ space: Spacing.XS }) {
+          Text(SolarCalc.phaseShort(this.phaseValue))
+            .fontSize(FontSize.TITLE)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.lb_ink'))
+          Text('光线阶段')
+            .fontSize(FontSize.SMALL)
+            .fontColor($r('app.color.lb_muted'))
+        }
+        .alignItems(HorizontalAlign.End)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Bottom)
+    }
+    .width('100%')
+    .padding(Spacing.XL)
+    .backgroundColor($r('app.color.lb_panel'))
+    .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 关键时段 2x2 仪表格 */
+  @Builder
+  eventsGrid() {
+    Column({ space: Spacing.S }) {
+      Text('今日关键时段')
+        .fontSize(FontSize.BODY_L)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.lb_ink'))
+      Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
+        this.eventTile('日出', this.sunriseText)
+        this.eventTile('日落', this.sunsetText)
+        this.eventTile('黄金（晨）', this.goldenAmText)
+        this.eventTile('黄金（夕）', this.goldenPmText)
+      }
+      .width('100%')
+      if (this.polarText.length > 0) {
+        NoticeBar({ text: this.polarText })
+      }
+      Text('算法：NOAA/Meeus 低精度级数；日出日落按上边缘 + 标准折射（几何高度 -0.833°）。')
+        .fontSize(FontSize.CAPTION)
+        .fontColor($r('app.color.lb_muted'))
+    }
+    .width('100%')
+    .padding(Spacing.XL)
+    .backgroundColor($r('app.color.lb_panel'))
+    .borderRadius(Radius.CARD)
+    .borderWidth(1)
+    .borderColor($r('app.color.lb_line'))
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  eventTile(label: string, value: string) {
+    Column({ space: Spacing.XS }) {
+      Text(value)
+        .fontSize(FontSize.TITLE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.lb_ink'))
+      Text(label)
+        .fontSize(FontSize.CAPTION)
+        .fontColor($r('app.color.lb_muted'))
+    }
+    .width('49%')
+    .padding(Spacing.M)
+    .margin({ bottom: Spacing.S })
+    .backgroundColor($r('app.color.lb_panel2'))
+    .borderRadius(Radius.STAT)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 主要操作：反向寻光 / 机位库 */
+  @Builder
+  quickActions() {
+    Row({ space: Spacing.S }) {
+      Button('反向寻光')
+        .type(ButtonType.Normal)
+        .height(MIN_TOUCH)
+        .layoutWeight(1)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor($r('app.color.lb_primary'))
+        .fontColor($r('app.color.lb_on_primary'))
+        .fontSize(FontSize.BODY)
+        .fontWeight(FontWeight.Medium)
+        .onClick(() => {
+          this.onNavigate('reverse');
+        })
+      Button('机位库')
+        .type(ButtonType.Normal)
+        .height(MIN_TOUCH)
+        .layoutWeight(1)
+        .borderRadius(Radius.BUTTON)
+        .backgroundColor($r('app.color.lb_panel2'))
+        .fontColor($r('app.color.lb_ink'))
+        .fontSize(FontSize.BODY)
+        .onClick(() => {
+          this.onNavigate('locations');
+        })
+    }
+    .width('100%')
+  }
+
   build() {
     Scroll() {
       Column({ space: Spacing.M }) {
-        TopBar({
-          title: '今日光线',
-          subtitle: '当前位置或手动地点的今日时段与太阳高度/方位',
-          chipText: '本地计算'
-        })
-
-        HeroCard({
-          heroTitle: '好光线，值得提前抵达',
-          heroBody: '逐光按真实经纬度与时间计算太阳方位、日出日落与黄金/蓝调时刻，帮你提前定好机位和时刻。全部计算在本机完成，不联网、不埋点。',
-          primaryLabel: '反向查找好光线',
-          ghostLabel: '查看完整日轨',
-          onPrimary: () => {
-            this.onNavigate('reverse');
-          },
-          onGhost: () => {
-            this.onNavigate('sunpath');
-          }
-        })
+        this.slimHeader()
+        this.stationHeader()
 
         if (this.errorText.length > 0) {
           ErrorCard({
@@ -471,27 +652,45 @@ export struct HomePage {
           .width('100%')
         } else if (!this.hasPlace) {
           this.emptyBlock()
-        } else {
-          this.heroCard()
-          if (this.isTablet) {
-            // 平板：图表与光线时刻双栏并排（任务书 §0「平板图表双栏」）
-            Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
-              Column() {
-                this.timeSection()
-              }
-              .width('49%')
-
-              Column() {
-                this.eventsSection()
-              }
-              .width('49%')
+        } else if (this.isWide) {
+          Row({ space: Spacing.M }) {
+            Column({ space: Spacing.M }) {
+              this.timeSection()
+              this.eventsGrid()
             }
-            .width('100%')
-          } else {
-            this.timeSection()
-            this.eventsSection()
+            .layoutWeight(1)
+
+            Column({ space: Spacing.M }) {
+              this.instrumentPanel()
+              this.planSection()
+              this.quickActions()
+            }
+            .width(320)
           }
+          .width('100%')
+          .alignItems(VerticalAlign.Top)
+        } else if (this.isTablet) {
+          Row({ space: Spacing.M }) {
+            Column({ space: Spacing.M }) {
+              this.timeSection()
+            }
+            .layoutWeight(1)
+
+            Column({ space: Spacing.M }) {
+              this.instrumentPanel()
+              this.eventsGrid()
+              this.planSection()
+            }
+            .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Top)
+        } else {
+          this.instrumentPanel()
+          this.timeSection()
+          this.eventsGrid()
           this.planSection()
+          this.quickActions()
         }
       }
       .width('100%')
@@ -505,6 +704,7 @@ export struct HomePage {
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const width = Number.parseFloat(`${newArea.width}`);
       this.isTablet = width >= 600;
+      this.isWide = width >= 1200;
     })
   }
 }

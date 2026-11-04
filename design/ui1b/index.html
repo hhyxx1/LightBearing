@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>UI-1B · 高保真原型索引与 Token 表</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+body{padding:28px;background:#06101b;max-width:1180px;margin:0 auto}
+h1{font-size:22px;margin-bottom:6px}
+h2{font-size:15px;margin:26px 0 10px;color:var(--amber)}
+p{font-size:13px;color:var(--muted);line-height:1.8}
+table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.06em}
+td b{color:var(--ink);font-weight:700}
+a{color:var(--cyan);text-decoration:none}
+.links{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+.links a{display:inline-flex;height:44px;align-items:center;padding:0 16px;border-radius:12px;
+  border:1px solid var(--line-strong);background:var(--surface);font-size:13px;color:var(--ink)}
+.sw{display:inline-block;width:14px;height:14px;border-radius:4px;border:1px solid var(--line-strong);vertical-align:-2px;margin-right:6px}
+.note{border-left:2px solid var(--amber);background:rgba(255,188,107,.06);padding:10px 14px;border-radius:8px;margin-top:14px}
+</style></head><body>
+<h1>UI-1B · LightBearing 高保真原型</h1>
+<p>Solar Observatory / Professional Photography Workbench。深色为设计主方向，浅色为可选主题。
+原型内所有数值均为 <b>设计数据</b>，不代表真实计算结果，也不来自应用数据库。</p>
+<div class="links">
+  <a href="home.html">A. 今日光线（Compact / Expanded / Large）</a>
+  <a href="sunpath.html">B. 太阳轨迹（Compact / Expanded）</a>
+  <a href="reverse.html">C. 反向寻光（五状态 + Expanded）</a>
+</div>
+
+<h2>设计 Token（精确表）</h2>
+<table>
+  <tr><th>Token</th><th>取值</th><th>用途</th></tr>
+  <tr><td><b>bg</b></td><td><span class="sw" style="background:#0D1A29"></span>#0D1A29</td><td>应用底色</td></tr>
+  <tr><td><b>surface</b></td><td><span class="sw" style="background:#182C3D"></span>#182C3D</td><td>卡片面</td></tr>
+  <tr><td><b>surface-2</b></td><td><span class="sw" style="background:#213B4E"></span>#213B4E</td><td>抬升面 / 控件底</td></tr>
+  <tr><td><b>line</b></td><td>rgba(226,246,255,.12)</td><td>细线、分隔</td></tr>
+  <tr><td><b>amber</b></td><td><span class="sw" style="background:#FFBC6B"></span>#FFBC6B</td><td>太阳主色 / 主按钮 / 当前时刻</td></tr>
+  <tr><td><b>cyan</b></td><td><span class="sw" style="background:#73D9D5"></span>#73D9D5</td><td>参考值、辅助数据、蓝调</td></tr>
+  <tr><td><b>ink</b></td><td><span class="sw" style="background:#F9FAF3"></span>#F9FAF3</td><td>主文本</td></tr>
+  <tr><td><b>muted</b></td><td><span class="sw" style="background:#A2B9C5"></span>#A2B9C5</td><td>次文本 / 单位</td></tr>
+  <tr><td><b>ok / warn / danger</b></td><td>#7BD88F / #FFBC6B / #FF8A80</td><td>状态（必须配文字，不只靠颜色）</td></tr>
+  <tr><td><b>space 1–8</b></td><td>4 / 8 / 12 / 16 / 20 / 24 / 32 / 40</td><td>4vp 网格</td></tr>
+  <tr><td><b>radius card / ctrl / chip / sheet</b></td><td>18 / 12 / 999 / 24</td><td>卡片、按钮、标签、底部浮层</td></tr>
+  <tr><td><b>type display / h1 / h2 / title</b></td><td>36 / 30 / 22 / 20</td><td>仪表大数字、页面标题</td></tr>
+  <tr><td><b>type body / bodyS / caption / micro</b></td><td>15 / 14 / 12 / 11</td><td>正文、说明、单位</td></tr>
+  <tr><td><b>touch</b></td><td>48（最小 44）</td><td>所有可点元素</td></tr>
+  <tr><td><b>motion fast / base / slow</b></td><td>120 / 200 / 280 ms</td><td>仅视觉，不改业务状态</td></tr>
+</table>
+
+<h2>排版与数字规则</h2>
+<p>数值统一使用等宽数字（tabular-nums）。角度保留 1 位小数，时间使用 <b>HH:mm</b>，UTC 偏移固定 <b>±HH:MM</b>，
+误差以「0.2°」形式放在主值后面的括号内。中文为主，不添加纯英文装饰标题（INSPECTOR 等仅在宽屏检查器作为极小的分组标签）。</p>
+
+<div class="note">原型边界：本目录只用于视觉评审与实现对照，不参与构建。
+大屏（Expanded / Large）标记为 <b>DESIGN_PREVIEW</b>，未在折叠屏 / 平板真机验证。</div>
+</body></html>

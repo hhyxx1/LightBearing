@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>UI-1B · 今日光线 高保真原型</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+body{padding:28px;background:#06101b}
+.board{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.frame{background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;position:relative;flex:none}
+.tag{position:absolute;left:10px;top:-12px;font-size:10px;letter-spacing:.12em;color:var(--muted);background:#06101b;padding:2px 8px;border-radius:6px}
+/* ---- 手机 390×844 ---- */
+.phone{width:390px;height:844px}
+.status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:12px;color:var(--muted)}
+.body{height:calc(100% - 44px - 76px);overflow:auto;padding:0 16px 16px}
+.appbar{display:flex;justify-content:space-between;align-items:flex-start;padding:4px 0 12px}
+.station{font-size:var(--t-h2);font-weight:700;letter-spacing:.2px}
+.station small{display:block;font-weight:400;font-size:var(--t-caption);color:var(--muted);margin-top:4px}
+/* 仪表主盘 */
+.gauge{background:linear-gradient(150deg,rgba(255,188,107,.10),rgba(24,44,61,.6) 55%),var(--surface);
+  border:1px solid rgba(255,188,107,.22);border-radius:20px;padding:16px;position:relative;overflow:hidden}
+.gauge .row{display:flex;gap:14px;align-items:flex-end}
+.kpi{flex:1}
+.kpi .v{font-size:40px;line-height:1;font-weight:800;color:var(--amber);letter-spacing:-.01em}
+.kpi.alt .v{color:var(--cyan)}
+.kpi .l{margin-top:6px;font-size:var(--t-caption);color:var(--muted)}
+.gauge .phase{position:absolute;right:14px;top:14px}
+.arc{margin-top:12px;height:88px;position:relative}
+.arc svg{width:100%;height:100%;display:block}
+/* 时间轴 */
+.timeline{margin-top:12px}
+.tl-bar{height:10px;border-radius:6px;background:linear-gradient(90deg,#13283a,#13283a);position:relative;overflow:hidden}
+.band{position:absolute;top:0;bottom:0}
+.band.gold{background:rgba(255,188,107,.55)}
+.band.blue{background:rgba(115,217,213,.45)}
+.band.day{background:rgba(226,246,255,.10)}
+.now{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--amber);box-shadow:0 0 8px rgba(255,188,107,.8)}
+.tl-head{display:flex;justify-content:space-between;font-size:var(--t-micro);color:var(--muted);margin-bottom:6px}
+.slider{margin-top:12px;display:flex;align-items:center;gap:10px}
+.slider input{flex:1;accent-color:var(--amber)}
+.readout{font-size:var(--t-body-s);color:var(--ink);min-width:96px;text-align:right}
+/* 事件网格 */
+.events{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.ev{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.ev b{display:block;font-size:var(--t-body);font-weight:700}
+.ev span{font-size:var(--t-micro);color:var(--muted)}
+/* 最近计划 */
+.plan{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px;border-radius:14px;
+  background:var(--surface);border:1px solid var(--line)}
+.plan .dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);flex:none}
+/* 快捷入口 */
+.quick{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
+.tab{height:76px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-around;background:rgba(9,20,32,.92)}
+.tab div{font-size:10px;color:var(--muted);text-align:center;display:grid;gap:4px;justify-items:center}
+.tab div.on{color:var(--amber)}
+.tab i{width:20px;height:20px;border:1.6px solid currentColor;border-radius:6px;display:block}
+/* ---- 平板 1024×768 ---- */
+.tablet{width:1024px;height:768px}
+.pad{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;padding:0 20px 20px;height:calc(100% - 44px - 20px)}
+.pad .left,.pad .right{display:flex;flex-direction:column;gap:12px;min-width:0}
+.bigarc{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:16px;position:relative;overflow:hidden}
+.bigarc svg{width:100%;height:100%}
+.inspector{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.param{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line)}
+.param span{font-size:var(--t-caption);color:var(--muted)}
+.param b{font-size:var(--t-body);font-weight:700}
+/* ---- Large 1440×900 ---- */
+.large{width:1440px;height:900px}
+.shell3{display:grid;grid-template-columns:240px 1fr 320px;height:calc(100% - 44px)}
+.rail{border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:6px;background:rgba(7,16,26,.5)}
+.rail .item{height:44px;border-radius:12px;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--muted);font-size:var(--t-body-s)}
+.rail .item.on{background:var(--surface-2);color:var(--ink);border:1px solid rgba(255,188,107,.35)}
+.center{padding:16px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.checker{border-left:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:12px;background:rgba(7,16,26,.32)}
+.handnote{position:absolute;right:10px;bottom:8px;font-size:10px;color:rgba(162,185,197,.6)}
+h1.sec{font-size:14px;font-weight:700;margin:34px 0 10px;color:var(--ink)}
+p.note{font-size:12px;color:var(--muted);line-height:1.7;max-width:900px}
+</style></head><body>
+<h1 class="sec">A · 今日光线 —— Compact（390×844）</h1>
+<div class="board">
+  <div class="frame phone"><span class="tag">COMPACT · DESIGN_DATA</span>
+    <div class="status"><span class="num">09:41</span><span class="num">UTC+08:00 · 5G · 84%</span></div>
+    <div class="body">
+      <div class="appbar">
+        <div class="station">上海 · 外滩<small class="num">2026-11-04 周三 · Asia/Shanghai</small></div>
+        <span class="chip amber">白昼</span>
+      </div>
+
+      <div class="gauge">
+        <span class="chip amber phase">黄金时段</span>
+        <div class="row">
+          <div class="kpi"><div class="v num">142.6°</div><div class="l">太阳方位 · 东南</div></div>
+          <div class="kpi alt"><div class="v num">23.4°</div><div class="l">太阳高度</div></div>
+        </div>
+        <div class="arc">
+          <svg viewBox="0 0 340 88" preserveAspectRatio="none">
+            <path d="M8 76 Q170 -34 332 76" fill="rgba(255,188,107,.10)" stroke="none"/>
+            <path d="M8 76 Q170 -34 332 76" fill="none" stroke="#FFBC6B" stroke-width="2"/>
+            <line x1="8" y1="76" x2="332" y2="76" stroke="rgba(226,246,255,.22)" stroke-dasharray="4 4"/>
+            <circle cx="196" cy="24" r="5" fill="#FFBC6B" stroke="#0D1A29" stroke-width="3"/>
+          </svg>
+        </div>
+        <div class="timeline">
+          <div class="tl-head"><span class="num">06:18 日出</span><span class="num">17:02 日落</span></div>
+          <div class="tl-bar">
+            <div class="band day" style="left:0;width:100%"></div>
+            <div class="band blue" style="left:2%;width:8%"></div>
+            <div class="band gold" style="left:10%;width:14%"></div>
+            <div class="band gold" style="left:76%;width:13%"></div>
+            <div class="band blue" style="left:89%;width:7%"></div>
+            <div class="now" style="left:46%"></div>
+          </div>
+          <div class="slider">
+            <input type="range" min="0" max="1000" value="460">
+            <div class="readout num">09:41 · +08:00</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="events">
+        <div class="ev"><b class="num">06:18</b><span>日出 · 方位 108°</span></div>
+        <div class="ev"><b class="num">17:02</b><span>日落 · 方位 252°</span></div>
+        <div class="ev"><b class="num">06:36–07:44</b><span>黄金时段（晨）</span></div>
+        <div class="ev"><b class="num">16:12–17:02</b><span>黄金时段（昏）</span></div>
+      </div>
+
+      <div class="plan">
+        <span class="dot"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:var(--t-body);font-weight:600">外滩 · 2026-11-05 06:40</div>
+          <div class="cap">目标 108° / 4° · 黄金时段</div>
+        </div>
+        <span class="chip">查看</span>
+      </div>
+
+      <div class="quick">
+        <button class="btn primary">反向寻光</button>
+        <button class="btn ghost">机位库</button>
+      </div>
+    </div>
+    <div class="tab">
+      <div class="on"><i></i>今日</div><div><i></i>轨迹</div><div><i></i>计划</div>
+      <div><i></i>日历</div><div><i></i>更多</div>
+    </div>
+    <div class="handnote">设计数据，非真实计算结果</div>
+  </div>
+
+  <div class="frame tablet"><span class="tag">EXPANDED · 1024×768 · DESIGN_PREVIEW</span>
+    <div class="status"><span class="num">09:41</span><span class="num">Asia/Shanghai · UTC+08:00</span></div>
+    <div class="pad">
+      <div class="left">
+        <div class="appbar" style="padding:0">
+          <div class="station">上海 · 外滩<small class="num">2026-11-04 · 白昼 · 黄金时段</small></div>
+          <span class="chip amber">黄金时段</span>
+        </div>
+        <div class="bigarc">
+          <svg viewBox="0 0 620 330" preserveAspectRatio="none">
+            <g stroke="rgba(226,246,255,.12)" stroke-dasharray="4 6">
+              <line x1="0" y1="60" x2="620" y2="60"/><line x1="0" y1="140" x2="620" y2="140"/>
+              <line x1="0" y1="220" x2="620" y2="220"/><line x1="0" y1="284" x2="620" y2="284"/>
+            </g>
+            <path d="M10 284 Q310 -120 610 284" fill="rgba(255,188,107,.08)"/>
+            <path d="M10 284 Q310 -120 610 284" fill="none" stroke="#FFBC6B" stroke-width="3"/>
+            <circle cx="330" cy="112" r="7" fill="#FFBC6B" stroke="#0D1A29" stroke-width="4"/>
+            <text x="12" y="304" fill="#A2B9C5" font-size="12">06:18</text>
+            <text x="286" y="304" fill="#A2B9C5" font-size="12">11:40</text>
+            <text x="566" y="304" fill="#A2B9C5" font-size="12">17:02</text>
+          </svg>
+        </div>
+        <div class="card" style="padding:12px">
+          <div class="tl-head"><span class="num">黄金 06:36–07:44</span><span class="num">蓝调 17:02–17:20</span></div>
+          <div class="tl-bar"><div class="band day" style="left:0;width:100%"></div>
+            <div class="band blue" style="left:2%;width:8%"></div>
+            <div class="band gold" style="left:10%;width:14%"></div>
+            <div class="band gold" style="left:76%;width:13%"></div>
+            <div class="now" style="left:46%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="inspector">
+          <div class="micro">CURRENT OBSERVATION</div>
+          <div class="param"><span>太阳方位</span><b class="num">142.6°</b></div>
+          <div class="param"><span>太阳高度</span><b class="num">23.4°</b></div>
+          <div class="param"><span>本地时刻</span><b class="num">09:41</b></div>
+          <div class="param"><span>UTC 偏移</span><b class="num">+08:00</b></div>
+          <div class="param" style="border:none"><span>光线阶段</span><b>黄金时段</b></div>
+        </div>
+        <div class="card" style="flex:1">
+          <div class="micro" style="margin-bottom:8px">今日时段</div>
+          <div class="events" style="grid-template-columns:1fr;margin:0">
+            <div class="ev"><b class="num">06:18</b><span>日出</span></div>
+            <div class="ev"><b class="num">17:02</b><span>日落</span></div>
+            <div class="ev"><b class="num">06:36–07:44</b><span>黄金（晨）</span></div>
+            <div class="ev"><b class="num">17:02–17:20</b><span>蓝调</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="micro" style="margin-bottom:8px">最近计划</div>
+          <div style="font-size:var(--t-body);font-weight:600">外滩 · 11-05 06:40</div>
+          <div class="cap">目标 108° / 4°</div>
+        </div>
+      </div>
+    </div>
+    <div class="handnote">大屏布局为设计预览，未在折叠/平板真机验证</div>
+  </div>
+</div>
+
+<h1 class="sec">A′ · 今日光线 —— Large（1440×900 工作台）</h1>
+<div class="board">
+  <div class="frame large"><span class="tag">LARGE · 1440×900 · DESIGN_PREVIEW</span>
+    <div class="status"><span class="num">09:41 · 上海 外滩</span><span class="num">Asia/Shanghai · UTC+08:00 · 白昼</span></div>
+    <div class="shell3">
+      <div class="rail">
+        <div class="item on">◎ 今日光线</div><div class="item">◔ 太阳轨迹</div>
+        <div class="item">⌕ 反向寻光</div><div class="item">◫ 拍摄计划</div>
+        <div class="item">▦ 日历</div><div class="item">⛭ 设置</div>
+        <div style="flex:1"></div>
+        <div class="item muted" style="font-size:11px">本地计算 · 不联网</div>
+      </div>
+      <div class="center">
+        <div class="appbar" style="padding:0"><div class="station">今日光线<small class="num">2026-11-04 周三 · 黄金时段进行中</small></div>
+          <div style="display:flex;gap:8px"><span class="chip amber">黄金时段</span><span class="chip cyan">日长 10h44m</span></div></div>
+        <div class="bigarc" style="flex:1">
+          <svg viewBox="0 0 780 420" preserveAspectRatio="none">
+            <g stroke="rgba(226,246,255,.10)" stroke-dasharray="4 6">
+              <line x1="0" y1="80" x2="780" y2="80"/><line x1="0" y1="170" x2="780" y2="170"/>
+              <line x1="0" y1="260" x2="780" y2="260"/><line x1="0" y1="350" x2="780" y2="350"/>
+            </g>
+            <path d="M16 350 Q390 -160 764 350" fill="rgba(255,188,107,.08)"/>
+            <path d="M16 350 Q390 -160 764 350" fill="none" stroke="#FFBC6B" stroke-width="3"/>
+            <line x1="16" y1="350" x2="764" y2="350" stroke="rgba(226,246,255,.28)"/>
+            <circle cx="404" cy="146" r="8" fill="#FFBC6B" stroke="#0D1A29" stroke-width="4"/>
+            <text x="20" y="378" fill="#A2B9C5" font-size="12">05:30</text>
+            <text x="360" y="378" fill="#A2B9C5" font-size="12">11:40</text>
+            <text x="716" y="378" fill="#A2B9C5" font-size="12">17:50</text>
+          </svg>
+        </div>
+        <div class="card" style="padding:12px">
+          <div class="slider" style="margin:0"><input type="range" min="0" max="1000" value="460">
+            <div class="readout num">09:41 · 142.6° / 23.4°</div></div>
+        </div>
+      </div>
+      <div class="checker">
+        <div class="micro">INSPECTOR</div>
+        <div class="inspector" style="border:none;padding:0;background:transparent">
+          <div class="param"><span>太阳方位</span><b class="num">142.6°</b></div>
+          <div class="param"><span>太阳高度</span><b class="num">23.4°</b></div>
+          <div class="param"><span>日出 / 日落</span><b class="num">06:18 / 17:02</b></div>
+          <div class="param"><span>黄金（昏）</span><b class="num">16:12–17:02</b></div>
+          <div class="param" style="border:none"><span>蓝调（昏）</span><b class="num">17:02–17:20</b></div>
+        </div>
+        <div class="hr"></div>
+        <div class="micro">最近计划</div>
+        <div class="card"><div style="font-weight:600">外滩 · 11-05 06:40</div><div class="cap">目标 108° / 4° · 黄金</div></div>
+        <div class="hr"></div>
+        <button class="btn primary">反向寻光</button>
+        <button class="btn ghost">打开完整日轨</button>
+      </div>
+    </div>
+    <div class="handnote">右栏为产品检查器（非设计系统面板）</div>
+  </div>
+</div>
+<p class="note">所有数值为 <b>设计数据</b>，用于构图与层级评审，不代表真实计算；真实实现必须复用 SolarCalc / TimeUtil / Timeline 的既有结果，禁止用视觉数据替代。</p>
+</body></html>

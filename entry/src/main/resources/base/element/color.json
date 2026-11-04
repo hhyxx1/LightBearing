@@ -6,7 +6,7 @@
     },
     {
       "name": "lb_bg",
-      "value": "#F2F6F9"
+      "value": "#F4F1EA"
     },
     {
       "name": "lb_panel",
@@ -14,31 +14,31 @@
     },
     {
       "name": "lb_panel2",
-      "value": "#E8EFF4"
+      "value": "#EBE6DB"
     },
     {
       "name": "lb_primary",
-      "value": "#9C5A08"
+      "value": "#9A5A0C"
     },
     {
       "name": "lb_accent",
-      "value": "#146E6B"
+      "value": "#116C69"
     },
     {
       "name": "lb_ink",
-      "value": "#0D1A29"
+      "value": "#141F2A"
     },
     {
       "name": "lb_muted",
-      "value": "#516A7B"
+      "value": "#52646F"
     },
     {
       "name": "lb_line",
-      "value": "#D6E1E8"
+      "value": "#DCD5C6"
     },
     {
       "name": "lb_on_primary",
-      "value": "#FFFFFF"
+      "value": "#FFF8EC"
     },
     {
       "name": "lb_nav_active_bg",

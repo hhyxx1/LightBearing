@@ -1,0 +1,56 @@
+/* UI-1B 设计 Token（深色专业工作台基线）
+   说明：原型仅供设计审阅，不是产品实现；数值即 ArkTS 落地目标值。 */
+
+:root{
+  /* 色彩 */
+  --bg:#0D1A29;            /* 应用底 */
+  --surface:#182C3D;       /* 卡片面 */
+  --surface-2:#213B4E;     /* 抬升面 / 控件 */
+  --line:rgba(226,246,255,.12);
+  --line-strong:rgba(226,246,255,.22);
+  --amber:#FFBC6B;         /* 太阳主色 */
+  --amber-weak:rgba(255,188,107,.14);
+  --cyan:#73D9D5;          /* 参考/辅助 */
+  --cyan-weak:rgba(115,217,213,.14);
+  --ink:#F9FAF3;           /* 主文本 */
+  --muted:#A2B9C5;         /* 次文本 */
+  --ok:#7BD88F;
+  --warn:#FFBC6B;
+  --danger:#FF8A80;
+
+  /* 间距（4vp 网格） */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px; --s8:40px;
+  /* 圆角 */
+  --r-card:18px; --r-ctrl:12px; --r-chip:999px; --r-sheet:24px;
+  /* 字级 */
+  --t-display:36px; --t-h1:30px; --t-h2:22px; --t-title:20px;
+  --t-body:15px; --t-body-s:14px; --t-caption:12px; --t-micro:11px;
+  /* 触控 */
+  --touch:48px; --touch-min:44px;
+  /* 动效 */
+  --m-fast:120ms; --m-base:200ms; --m-slow:280ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#06101b;color:var(--ink);
+  font-family:"HarmonyOS Sans SC","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);padding:var(--s4)}
+.elev{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-ctrl)}
+.muted{color:var(--muted)}
+.cap{font-size:var(--t-caption);color:var(--muted)}
+.micro{font-size:var(--t-micro);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:var(--r-chip);
+  border:1px solid var(--line-strong);font-size:var(--t-micro);color:var(--muted)}
+.chip.amber{border-color:rgba(255,188,107,.45);background:var(--amber-weak);color:var(--amber)}
+.chip.cyan{border-color:rgba(115,217,213,.45);background:var(--cyan-weak);color:var(--cyan)}
+.chip.danger{border-color:rgba(255,138,128,.45);background:rgba(255,138,128,.12);color:var(--danger)}
+.btn{height:var(--touch);padding:0 16px;border-radius:var(--r-ctrl);border:1px solid var(--line-strong);
+  background:var(--surface-2);color:var(--ink);font-size:var(--t-body-s);font-weight:600;display:inline-flex;
+  align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#0C1A21}
+.btn.ghost{background:transparent}
+.btn[disabled],.btn.disabled{opacity:.42}
+.hr{height:1px;background:var(--line)}

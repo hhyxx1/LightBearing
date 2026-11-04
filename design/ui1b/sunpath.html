@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>UI-1B · 太阳轨迹 高保真原型</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+body{padding:28px;background:#06101b}
+.board{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.frame{background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;position:relative}
+.tag{position:absolute;left:10px;top:-12px;font-size:10px;letter-spacing:.12em;color:var(--muted);background:#06101b;padding:2px 8px;border-radius:6px}
+.phone{width:390px;height:844px}.tab1024{width:1024px;height:768px}
+.status{height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:12px;color:var(--muted)}
+.body{padding:0 16px;height:calc(100% - 44px - 76px);overflow:auto}
+.head{display:flex;justify-content:space-between;align-items:flex-start;padding:4px 0 12px}
+.title{font-size:var(--t-h2);font-weight:700}.title small{display:block;font-size:var(--t-caption);color:var(--muted);font-weight:400;margin-top:4px}
+.plot{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:12px}
+.plot svg{width:100%;height:230px;display:block}
+.legend{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
+.legend span{font-size:var(--t-micro);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:4px;border-radius:2px}
+.readouts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.ro{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.ro b{display:block;font-size:20px;font-weight:800}
+.ro span{font-size:var(--t-micro);color:var(--muted)}
+.slider{margin-top:12px;display:flex;gap:10px;align-items:center}
+.slider input{flex:1;accent-color:var(--amber)}
+.note{background:rgba(255,188,107,.10);border:1px solid rgba(255,188,107,.3);border-radius:12px;padding:10px 12px;
+  font-size:var(--t-caption);color:var(--amber);margin-top:12px}
+.note.cyan{background:var(--cyan-weak);border-color:rgba(115,217,213,.35);color:var(--cyan)}
+.pad{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;padding:0 20px 20px;height:calc(100% - 64px)}
+.pad .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px;flex:1}
+.tab{height:76px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-around;background:rgba(9,20,32,.92)}
+.tab div{font-size:10px;color:var(--muted);display:grid;gap:4px;justify-items:center}
+.tab div.on{color:var(--amber)}
+.tab i{width:20px;height:20px;border:1.6px solid currentColor;border-radius:6px;display:block}
+.ticker{position:absolute;right:10px;bottom:8px;font-size:10px;color:rgba(162,185,197,.6)}
+</style></head><body>
+<div class="board">
+  <div class="frame phone"><span class="tag">COMPACT · DESIGN_DATA</span>
+    <div class="status"><span class="num">09:41</span><span class="num">UTC+08:00</span></div>
+    <div class="body">
+      <div class="head"><div class="title">太阳轨迹<small class="num">上海 · 外滩 · 2026-11-04 · 日长 10h44m</small></div>
+        <span class="chip amber">黄金时段</span></div>
+
+      <div class="plot">
+        <svg viewBox="0 0 340 230" preserveAspectRatio="none">
+          <g stroke="rgba(226,246,255,.10)" stroke-dasharray="4 6">
+            <line x1="0" y1="40" x2="340" y2="40"/><line x1="0" y1="90" x2="340" y2="90"/>
+            <line x1="0" y1="140" x2="340" y2="140"/><line x1="0" y1="190" x2="340" y2="190"/>
+          </g>
+          <rect x="0" y="190" width="340" height="40" fill="rgba(226,246,255,.06)"/>
+          <path d="M8 190 Q170 -40 332 190" fill="rgba(255,188,107,.08)"/>
+          <path d="M8 190 Q170 -40 332 190" fill="none" stroke="#FFBC6B" stroke-width="2.5"/>
+          <line x1="0" y1="190" x2="340" y2="190" stroke="rgba(226,246,255,.3)"/>
+          <circle cx="196" cy="66" r="6" fill="#FFBC6B" stroke="#0D1A29" stroke-width="3"/>
+          <line x1="196" y1="66" x2="196" y2="190" stroke="rgba(255,188,107,.45)" stroke-dasharray="3 4"/>
+          <text x="6" y="214" fill="#A2B9C5" font-size="10">06:18</text>
+          <text x="158" y="214" fill="#A2B9C5" font-size="10">11:40</text>
+          <text x="304" y="214" fill="#A2B9C5" font-size="10">17:02</text>
+          <text x="4" y="38" fill="#A2B9C5" font-size="9">60°</text>
+          <text x="4" y="88" fill="#A2B9C5" font-size="9">30°</text>
+          <text x="4" y="188" fill="#A2B9C5" font-size="9">0°</text>
+        </svg>
+        <div class="legend">
+          <span><i class="sw" style="background:#FFBC6B"></i>太阳高度</span>
+          <span><i class="sw" style="background:rgba(255,188,107,.55)"></i>黄金</span>
+          <span><i class="sw" style="background:rgba(115,217,213,.45)"></i>蓝调</span>
+          <span><i class="sw" style="background:rgba(226,246,255,.25)"></i>地平线</span>
+        </div>
+        <div class="slider"><input type="range" min="0" max="1000" value="460"><div class="num" style="font-size:13px;min-width:74px;text-align:right">09:41</div></div>
+      </div>
+
+      <div class="readouts">
+        <div class="ro"><b class="num">142.6°</b><span>方位 · 东南</span></div>
+        <div class="ro"><b class="num" style="color:var(--cyan)">23.4°</b><span>高度角</span></div>
+        <div class="ro"><b class="num">+08:00</b><span>UTC 偏移</span></div>
+        <div class="ro"><b class="num">黄金 06:36</b><span>下一个可用时段</span></div>
+      </div>
+
+      <div class="note cyan">该日无夏令时切换（日长 24h）。若切换日出现重复或缺失时刻，将在此处显示“两次 01:30 / 无 02:30”并附 UTC 候选。</div>
+    </div>
+    <div class="tab"><div><i></i>今日</div><div class="on"><i></i>轨迹</div><div><i></i>计划</div><div><i></i>日历</div><div><i></i>更多</div></div>
+    <div class="ticker">DESIGN_DATA</div>
+  </div>
+
+  <div class="frame tab1024"><span class="tag">EXPANDED · 1024×768 · DESIGN_PREVIEW</span>
+    <div class="status"><span class="num">09:41 · 上海 外滩</span><span class="num">Asia/Shanghai · UTC+08:00 · 日长 10h44m</span></div>
+    <div class="pad">
+      <div class="col">
+        <div class="plot" style="flex:1;display:flex;flex-direction:column">
+          <svg viewBox="0 0 600 320" preserveAspectRatio="none" style="flex:1;height:auto">
+            <g stroke="rgba(226,246,255,.10)" stroke-dasharray="5 7">
+              <line x1="0" y1="60" x2="600" y2="60"/><line x1="0" y1="120" x2="600" y2="120"/>
+              <line x1="0" y1="180" x2="600" y2="180"/><line x1="0" y1="240" x2="600" y2="240"/>
+            </g>
+            <rect x="0" y="240" width="600" height="50" fill="rgba(226,246,255,.06)"/>
+            <rect x="20" y="240" width="90" height="8" fill="rgba(115,217,213,.5)"/>
+            <rect x="110" y="240" width="120" height="8" fill="rgba(255,188,107,.55)"/>
+            <rect x="430" y="240" width="130" height="8" fill="rgba(255,188,107,.55)"/>
+            <rect x="560" y="240" width="40" height="8" fill="rgba(115,217,213,.5)"/>
+            <path d="M10 240 Q300 -120 590 240" fill="rgba(255,188,107,.08)"/>
+            <path d="M10 240 Q300 -120 590 240" fill="none" stroke="#FFBC6B" stroke-width="3"/>
+            <line x1="0" y1="240" x2="600" y2="240" stroke="rgba(226,246,255,.3)"/>
+            <circle cx="330" cy="86" r="7" fill="#FFBC6B" stroke="#0D1A29" stroke-width="4"/>
+            <line x1="330" y1="86" x2="330" y2="240" stroke="rgba(255,188,107,.4)" stroke-dasharray="4 5"/>
+            <text x="8" y="278" fill="#A2B9C5" font-size="11">06:18</text>
+            <text x="278" y="278" fill="#A2B9C5" font-size="11">11:40</text>
+            <text x="548" y="278" fill="#A2B9C5" font-size="11">17:02</text>
+            <text x="4" y="56" fill="#A2B9C5" font-size="10">60°</text>
+            <text x="4" y="116" fill="#A2B9C5" font-size="10">30°</text>
+          </svg>
+          <div class="slider" style="margin-top:10px"><input type="range" min="0" max="1000" value="460">
+            <div class="num" style="font-size:13px;min-width:110px;text-align:right">09:41 · 142.6°/23.4°</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel">
+          <div class="micro" style="margin-bottom:10px">CURRENT</div>
+          <div class="readouts" style="grid-template-columns:1fr;margin:0">
+            <div class="ro"><b class="num">142.6°</b><span>方位 · 东南</span></div>
+            <div class="ro"><b class="num" style="color:var(--cyan)">23.4°</b><span>高度角</span></div>
+            <div class="ro"><b class="num">09:41 · +08:00</b><span>本地时刻 · UTC 偏移</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="micro" style="margin-bottom:10px">TODAY</div>
+          <div class="ro" style="margin-bottom:8px"><b class="num">06:18 / 17:02</b><span>日出 / 日落</span></div>
+          <div class="ro" style="margin-bottom:8px"><b class="num">06:36–07:44</b><span>黄金（晨）</span></div>
+          <div class="ro"><b class="num">17:02–17:20</b><span>蓝调（昏）</span></div>
+        </div>
+        <button class="btn primary">保存为拍摄计划</button>
+      </div>
+    </div>
+    <div class="ticker">大屏为设计预览，未在折叠/平板真机验证</div>
+  </div>
+</div>
+</body></html>
