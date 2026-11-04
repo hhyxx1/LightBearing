@@ -25,7 +25,7 @@
 | `design/ui1b/home.html` | 今日光线：**Compact 390×844 / Expanded 1024×768 / Large 1440×900** |
 | `design/ui1b/sunpath.html` | 太阳轨迹：Compact + Expanded（含高度刻度、地平线、黄金/蓝调带、DST 提示） |
 | `design/ui1b/reverse.html` | 反向寻光：Compact 五状态（RUNNING/DONE_OK/DONE_EMPTY/FAILED/CANCELLED）+ Expanded |
-| `design/ui1b/shots/*.png` | 原型渲染图：`home.png`、`sunpath.png`、`reverse_states.png`、`tokens.png` |
+| `design/ui1b/shots/*.png` | 原型渲染图（Edge 无头，按档位单独出图）：`home_compact.png`(390×844)、`home_expanded.png`(1024×768)、`home_large.png`(1440×900)、`sunpath_compact.png`、`sunpath_expanded.png`、`reverse_states.png`（五状态合并）、`home.png`（三档对照）、`sunpath.png`（两档对照）、`tokens.png`（Token 表） |
 
 原型渲染方式：Edge 无头模式本地渲染（`--headless=new --screenshot`），**不是** WebView 方案，
 也不参与构建。所有数值均标注为设计数据。

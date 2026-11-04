@@ -260,4 +260,18 @@ p.note{font-size:12px;color:var(--muted);line-height:1.7;max-width:900px}
   </div>
 </div>
 <p class="note">所有数值为 <b>设计数据</b>，用于构图与层级评审，不代表真实计算；真实实现必须复用 SolarCalc / TimeUtil / Timeline 的既有结果，禁止用视觉数据替代。</p>
+
+<script>
+(function(){
+  const map = {phone:'.phone', tablet:'.tablet', large:'.large', expanded:'.tab1024,.rowframe', states:'.frame:not(.rowframe)'};
+  const key = location.hash.replace('#','');
+  if (key && map[key]) {
+    document.querySelectorAll('.frame').forEach(function(f){
+      if (!f.matches(map[key])) { f.style.display='none'; }
+    });
+    document.querySelectorAll('h1.sec, p.note').forEach(function(e){ e.style.display='none'; });
+    document.body.style.padding='0';
+  }
+})();
+</script>
 </body></html>

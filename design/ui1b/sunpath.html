@@ -133,4 +133,18 @@ body{padding:28px;background:#06101b}
     <div class="ticker">大屏为设计预览，未在折叠/平板真机验证</div>
   </div>
 </div>
+
+<script>
+(function(){
+  const map = {phone:'.phone', tablet:'.tablet', large:'.large', expanded:'.tab1024,.rowframe', states:'.frame:not(.rowframe)'};
+  const key = location.hash.replace('#','');
+  if (key && map[key]) {
+    document.querySelectorAll('.frame').forEach(function(f){
+      if (!f.matches(map[key])) { f.style.display='none'; }
+    });
+    document.querySelectorAll('h1.sec, p.note').forEach(function(e){ e.style.display='none'; });
+    document.body.style.padding='0';
+  }
+})();
+</script>
 </body></html>
