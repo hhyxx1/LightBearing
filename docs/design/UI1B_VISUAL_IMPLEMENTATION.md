@@ -82,9 +82,17 @@
 | 空机位 / 权限拒绝 | — | **NOT_RUN**（需要改变机位/权限状态，本轮不做破坏性操作） |
 | 原型与真机并排对照 | — | **NOT_RUN**（缺有效真机截图） |
 
-阻断原因：本轮新 HAP 已成功构建并安装（`install bundle successfully`），但随后设备进入
-**锁屏状态且无法通过注入解锁**（`aa start` 返回 `10106102 The device screen is locked`；
-`power-shell wakeup` + `dircFling 2` 三次上滑均未解锁，dump 文本仍是桌面：11月4日 / 应用市场 / 中国电信）。
+阻断原因（多次重复取证）：本轮新 HAP 已成功构建并安装（`install bundle successfully`），但设备处于
+**锁屏状态且无法通过注入解锁**：
+
+```text
+aa start → Error 10106102 The device screen is locked during the application launch
+power-shell wakeup + dircFling 2 ×3  → 仍在桌面（11月4日 / 应用市场 / 中国电信）
+power-shell wakeup + swipe 540,2300→540,500 ×1 → 锁屏提示「未识别成功，点击此处重试」（人脸解锁失败）
+```
+
+即：**需要用户解锁一次设备**才能继续采集。设备解锁后需补：浅色/深色首页、空机位态、权限拒绝态、
+原型与真机并排对照，以及 `KernelPerfReal` / `TimeZoneReal` 两套真机用例。
 因此：
 
 - **没有**任何「改版后」的真实截图，也**没有**并排对照图；不得用锁屏截图冒充；
