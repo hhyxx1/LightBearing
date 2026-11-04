@@ -95,18 +95,18 @@ HOME_MARKS = ("今日光线", "当前光线")
 
 sh("power-shell wakeup")
 time.sleep(0.8)
-t = texts(sh)
-if not any(x in t for x in HOME_MARKS + ("设置", "时钟", "天气", "相机")):
-    print("BLOCKED: 设备仍处于锁屏状态，请先解锁并保持屏幕常亮")
-    raise SystemExit(1)
-
 sh("aa force-stop com.hhyxx.LightBearing")
 time.sleep(0.8)
-sh("aa start -a EntryAbility -b com.hhyxx.LightBearing")
+r = subprocess.run([H, "-t", DEV, "shell", "aa start -a EntryAbility -b com.hhyxx.LightBearing"],
+                   capture_output=True, text=True, errors="ignore")
+out = (r.stdout or "") + (r.stderr or "")
+if "10106102" in out:
+    print("BLOCKED: 设备仍处于锁屏状态（aa start 返回 10106102），请解锁并保持屏幕常亮")
+    raise SystemExit(1)
 time.sleep(4)
 t = texts(sh)
 if not any(x in t for x in HOME_MARKS):
-    print("NOT_RUN: 首页未进入前台（可能启动失败或仍被锁屏拦截），未采集截图")
+    print("NOT_RUN: 首页未进入前台，未采集截图；当前可见文本前 6 项=", t[:6])
     raise SystemExit(1)
 
 shot(sh, f"{SHOTS}/ui1b_after_home_light.jpeg")
