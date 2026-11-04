@@ -93,6 +93,17 @@ power-shell wakeup + swipe 540,2300→540,500 ×1 → 锁屏提示「未识别�
 
 即：**需要用户解锁一次设备**才能继续采集。设备解锁后需补：浅色/深色首页、空机位态、权限拒绝态、
 原型与真机并排对照，以及 `KernelPerfReal` / `TimeZoneReal` 两套真机用例。
+
+为降低补采成本，已把采集流程固化为只读工具 `tools/ui1b/capture_device_shots.py`：
+
+```bash
+# 设备解锁并保持屏幕常亮后执行（不修改任何数据）
+python tools/ui1b/capture_device_shots.py
+# → 输出 ui1b_after_home_light.jpeg / ui1b_after_home_dark.jpeg / ui1b_compare_home.jpeg
+```
+
+工具内置三道保护：未解锁直接输出 `BLOCKED`、首页未进入前台输出 `NOT_RUN`、绝不用锁屏/桌面画面充数。
+空机位态与权限拒绝态需要改变数据或权限，未包含在脚本内，需人工决策后单独采集。
 因此：
 
 - **没有**任何「改版后」的真实截图，也**没有**并排对照图；不得用锁屏截图冒充；
