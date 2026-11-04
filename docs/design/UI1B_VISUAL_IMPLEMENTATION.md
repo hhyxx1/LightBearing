@@ -99,7 +99,9 @@
 外部太阳参考：node tools/solar-check/check.mjs → 全部通过
 应用 HAP：BUILD SUCCESSFUL，2,344,893 字节
 真机安装：install bundle successfully（新首页已装入设备）
-真机单元测试：aa test → Error 10106102（设备锁屏，无法启动），本轮未取得结果
+真机单元测试（设备解锁后补跑，本轮构建已重装 app + ohosTest 两个包）：
+  KernelPerfReal → Tests run: 2, Failure: 0
+  TimeZoneReal   → Tests run: 12, Failure: 0
 ```
 
 真机视觉验收：设备解锁后已补采浅色/深色首页与两张并排对照（见 §7）；
