@@ -49,6 +49,12 @@ export struct SunPathChart {
   @Prop goldenUpper: number = 6;
   @Prop goldenLower: number = -4;
   @Prop blueLower: number = -6;
+  /** 真实黄金时段 UTC 对（扁平 start,end,...），由 SolarCalc.lightWindows 提供 */
+  @Prop goldenPairs: number[] = [];
+  /** 真实蓝调时段 UTC 对 */
+  @Prop bluePairs: number[] = [];
+  /** 主题切换信号：变化时重载 Canvas 配色并重绘（不重启、不改业务状态） */
+  @Prop @Watch('onThemeChanged') themeStamp: number = 0;
   @Prop chartHeight: number = 220;
   onPickTime: (utcMs: number) => void = () => {
   };
@@ -67,6 +73,36 @@ export struct SunPathChart {
 
   onDataChanged(): void {
     this.redraw();
+  }
+
+  /** 深浅色切换：重新从资源读取配色后重绘 */
+  onThemeChanged(): void {
+    const host = this.getUIContext().getHostContext();
+    if (host !== undefined) {
+      this.colors = ThemeColors.load(host as common.Context);
+    }
+    this.redraw();
+  }
+
+  /** 绘制真实时段区间（跳过非法/区间外片段） */
+  private drawRanges(ctx: CanvasRenderingContext2D, pairs: number[], w: number, h: number,
+    fill: string): void {
+    if (pairs.length < 2) {
+      return;
+    }
+    ctx.fillStyle = fill;
+    for (let i = 0; i + 1 < pairs.length; i += 2) {
+      const r0 = this.tm.ratioOf(pairs[i]);
+      const r1 = this.tm.ratioOf(pairs[i + 1]);
+      if (r0 < 0 || r1 < 0 || r1 <= r0) {
+        continue;
+      }
+      const x0 = 8 + r0 * (w - 16);
+      const x1 = 8 + r1 * (w - 16);
+      // 时段带只画在地平线以下的「时间刻度」区域，避免读成盖住曲线的竖条
+      const y0 = this.yOf(0, h);
+      ctx.fillRect(x0, y0, Math.max(1, x1 - x0), Math.max(2, h - 22 - y0));
+    }
   }
 
   private redraw(): void {
@@ -120,6 +156,13 @@ export struct SunPathChart {
       ctx.moveTo(8, y);
       ctx.lineTo(w - 8, y);
       ctx.stroke();
+    }
+
+    // 高度角刻度（左侧），0° 即地平线
+    ctx.fillStyle = this.colors.muted;
+    ctx.font = `${FontSize.CAPTION}vp sans-serif`;
+    for (const tickAlt of [60, 30]) {
+      ctx.fillText(`${tickAlt}°`, 10, this.yOf(tickAlt, h) - 3);
     }
 
     // 地平线
@@ -180,6 +223,10 @@ export struct SunPathChart {
     const bandBottom = this.yOf(this.goldenLower, h);
     ctx.fillStyle = this.withAlpha(this.colors.primary, 0.16);
     ctx.fillRect(8, bandTop, w - 16, Math.max(2, bandBottom - bandTop));
+
+    // 真实黄金/蓝调时间区间
+    this.drawRanges(ctx, this.bluePairs, w, h, this.withAlpha(this.colors.accent, 0.16));
+    this.drawRanges(ctx, this.goldenPairs, w, h, this.withAlpha(this.colors.primary, 0.20));
 
     // 选中时刻：必须落在真实区间内才绘制（区间外不画错误标记）
     const selRatio = this.tm.ratioOf(this.selectedUtc);

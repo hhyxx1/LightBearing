@@ -130,6 +130,9 @@ export class Theme {
         target = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
       }
       context.getApplicationContext().setColorMode(target);
+      // 通知 Canvas 组件重载配色（不重启、不改业务状态）
+      const cur: number = AppStorage.get<number>('lbThemeStamp') === undefined ? 0 : (AppStorage.get<number>('lbThemeStamp') as number);
+      AppStorage.setOrCreate<number>('lbThemeStamp', cur + 1);
     } catch (err) {
       const e = err as BusinessError;
       hilog.error(DOMAIN, TAG, 'setColorMode failed %{public}s', JSON.stringify(e));

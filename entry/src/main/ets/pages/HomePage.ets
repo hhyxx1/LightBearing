@@ -10,6 +10,8 @@ import { LocationService, LocationResult } from '../services/LocationService';
 import { TopBar, SectionCard, MetricTile, StatusBadge, EmptyState, ErrorCard, NoticeBar,
   PermissionGate, ProjectTile, HeroCard, SkeletonCard, Dialogs } from '../components/Widgets';
 import { SunPathChart } from '../components/Charts';
+import { ObservationPanel } from '../components/ObservationPanel';
+import { ObservationBands } from '../services/ObservationBands';
 
 /**
  * S01 今日光线：当前机位 + 今日太阳高度/方位 + 光线时段。
@@ -27,6 +29,12 @@ export struct HomePage {
   @State errorText: string = '';
   /** >=1200vp：三区工作台 */
   @State isWide: boolean = false;
+  /** 真实时段区间（UTC 对），由 SolarCalc.lightWindows 计算 */
+  @State goldenPairs: number[] = [];
+  @State bluePairs: number[] = [];
+  /** 外壳发布的内容宽度（扣除导航栏），用于统一断点 */
+  @StorageProp('lbContentWidth') contentWidth: number = 0;
+  @StorageProp('lbThemeStamp') themeStamp: number = 0;
   @State showPermissionGate: boolean = false;
   @State locating: boolean = false;
   @State nowUtc: number = 0;
@@ -155,6 +163,10 @@ export struct HomePage {
 
     const w: LightWindow = SolarCalc.lightWindows(this.dayStartUtc, place.latWgs84, place.lonWgs84, th,
       this.dayEndUtc);
+    this.goldenPairs = ObservationBands.clippedPairs(ObservationBands.goldenPairs(w),
+      this.dayStartUtc, this.dayEndUtc);
+    this.bluePairs = ObservationBands.clippedPairs(ObservationBands.bluePairs(w),
+      this.dayStartUtc, this.dayEndUtc);
     this.goldenAmText = w.goldenMorningState === WindowState.AVAILABLE
       ? `${TimeUtil.formatTime(place.tzId, w.goldenMorningStartUtc)}-${TimeUtil.formatTime(place.tzId, w.goldenMorningEndUtc)}`
       : '无';
@@ -630,7 +642,7 @@ export struct HomePage {
 
   build() {
     Scroll() {
-      Column({ space: Spacing.M }) {
+      Column({ space: Spacing.S }) {
         this.slimHeader()
         this.stationHeader()
 
@@ -655,13 +667,40 @@ export struct HomePage {
         } else if (this.isWide) {
           Row({ space: Spacing.M }) {
             Column({ space: Spacing.M }) {
-              this.timeSection()
+          ObservationPanel({
+            placeName: this.placeName,
+            tzId: this.tzId,
+            lat: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.latWgs84,
+            lon: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84,
+            dayStartUtc: this.dayStartUtc,
+            dayEndUtc: this.dayEndUtc,
+            selectedUtc: this.selectedUtc,
+            sliderProgress: this.sliderProgress,
+            posAz: this.posAz,
+            posAlt: this.posAlt,
+            phaseLabel: this.phaseLabel,
+            phaseShort: SolarCalc.phaseShort(this.phaseValue),
+            selectedTimeText: TimeUtil.formatTime(this.tzId, this.selectedUtc),
+            offsetText: TimeUtil.offsetLabel(this.tzId, this.selectedUtc),
+            sunriseText: this.sunriseText,
+            sunsetText: this.sunsetText,
+            goldenPairs: this.goldenPairs,
+            bluePairs: this.bluePairs,
+            goldenUpper: AppState.settings.goldenUpper,
+            goldenLower: AppState.settings.goldenLower,
+            blueLower: AppState.settings.blueLower,
+            polarText: this.polarText,
+            chartHeight: this.isWide ? 260 : 200,
+            themeStamp: this.themeStamp,
+            onSlide: (progress: number) => {
+              this.onSliderChange(progress);
+            }
+          })
               this.eventsGrid()
             }
             .layoutWeight(1)
 
             Column({ space: Spacing.M }) {
-              this.instrumentPanel()
               this.planSection()
               this.quickActions()
             }
@@ -672,12 +711,39 @@ export struct HomePage {
         } else if (this.isTablet) {
           Row({ space: Spacing.M }) {
             Column({ space: Spacing.M }) {
-              this.timeSection()
+          ObservationPanel({
+            placeName: this.placeName,
+            tzId: this.tzId,
+            lat: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.latWgs84,
+            lon: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84,
+            dayStartUtc: this.dayStartUtc,
+            dayEndUtc: this.dayEndUtc,
+            selectedUtc: this.selectedUtc,
+            sliderProgress: this.sliderProgress,
+            posAz: this.posAz,
+            posAlt: this.posAlt,
+            phaseLabel: this.phaseLabel,
+            phaseShort: SolarCalc.phaseShort(this.phaseValue),
+            selectedTimeText: TimeUtil.formatTime(this.tzId, this.selectedUtc),
+            offsetText: TimeUtil.offsetLabel(this.tzId, this.selectedUtc),
+            sunriseText: this.sunriseText,
+            sunsetText: this.sunsetText,
+            goldenPairs: this.goldenPairs,
+            bluePairs: this.bluePairs,
+            goldenUpper: AppState.settings.goldenUpper,
+            goldenLower: AppState.settings.goldenLower,
+            blueLower: AppState.settings.blueLower,
+            polarText: this.polarText,
+            chartHeight: this.isWide ? 260 : 200,
+            themeStamp: this.themeStamp,
+            onSlide: (progress: number) => {
+              this.onSliderChange(progress);
+            }
+          })
             }
             .layoutWeight(1)
 
             Column({ space: Spacing.M }) {
-              this.instrumentPanel()
               this.eventsGrid()
               this.planSection()
             }
@@ -686,8 +752,35 @@ export struct HomePage {
           .width('100%')
           .alignItems(VerticalAlign.Top)
         } else {
-          this.instrumentPanel()
-          this.timeSection()
+          ObservationPanel({
+            placeName: this.placeName,
+            tzId: this.tzId,
+            lat: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.latWgs84,
+            lon: AppState.currentPlace === undefined ? 0 : AppState.currentPlace.lonWgs84,
+            dayStartUtc: this.dayStartUtc,
+            dayEndUtc: this.dayEndUtc,
+            selectedUtc: this.selectedUtc,
+            sliderProgress: this.sliderProgress,
+            posAz: this.posAz,
+            posAlt: this.posAlt,
+            phaseLabel: this.phaseLabel,
+            phaseShort: SolarCalc.phaseShort(this.phaseValue),
+            selectedTimeText: TimeUtil.formatTime(this.tzId, this.selectedUtc),
+            offsetText: TimeUtil.offsetLabel(this.tzId, this.selectedUtc),
+            sunriseText: this.sunriseText,
+            sunsetText: this.sunsetText,
+            goldenPairs: this.goldenPairs,
+            bluePairs: this.bluePairs,
+            goldenUpper: AppState.settings.goldenUpper,
+            goldenLower: AppState.settings.goldenLower,
+            blueLower: AppState.settings.blueLower,
+            polarText: this.polarText,
+            chartHeight: this.isWide ? 260 : 200,
+            themeStamp: this.themeStamp,
+            onSlide: (progress: number) => {
+              this.onSliderChange(progress);
+            }
+          })
           this.eventsGrid()
           this.planSection()
           this.quickActions()
@@ -703,8 +796,10 @@ export struct HomePage {
     .align(Alignment.Top)
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const width = Number.parseFloat(`${newArea.width}`);
-      this.isTablet = width >= 600;
-      this.isWide = width >= 1200;
+      // 优先使用外壳发布的内容宽度（已扣除 212vp 导航栏），避免两套断点互相冲突
+      const effective = this.contentWidth > 0 ? this.contentWidth : width;
+      this.isTablet = effective >= 600;
+      this.isWide = effective >= 1200;
     })
   }
 }

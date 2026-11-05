@@ -14,6 +14,7 @@ import reverseViewStateTest from './ReverseViewState.test';
 import planPlaceGuardTest from './PlanPlaceGuard.test';
 import exportBytesTest from './ExportBytes.test';
 import windowMatchingTest from './WindowMatching.test';
+import observationBandsTest from './ObservationBands.test';
 
 export default function testsuite() {
   solarCalcTest();
@@ -32,4 +33,5 @@ export default function testsuite() {
   planPlaceGuardTest();
   exportBytesTest();
   windowMatchingTest();
+  observationBandsTest();
 }

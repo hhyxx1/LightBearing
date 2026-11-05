@@ -670,6 +670,9 @@ struct Index {
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const width = Number.parseFloat(`${newArea.width}`);
       this.isTablet = width >= 600;
+      // 内容宽度 = 窗口宽度 − 导航栏占用（>=600vp 时 212vp），供页面统一断点使用
+      const nav = this.isTablet ? 212 : 0;
+      AppStorage.setOrCreate('lbContentWidth', Math.max(0, width - nav));
     })
   }
 }
