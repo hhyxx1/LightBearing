@@ -1,0 +1,147 @@
+/* LightBearing · UI-1B-R2 设计 Token（P0 修复版）
+   单一来源：所有原型的颜色/间距/字级/圆角/触控尺寸都从这里取。
+   深色为默认；body.light 覆盖为暖纸浅色。禁止页面内硬编码颜色（图表 SVG 的少量派生色除外）。 */
+
+:root{
+  color-scheme: dark;
+
+  /* 底色与面 */
+  --bg:#0B1622;
+  --bg-2:#0E1D2A;
+  --surface:#152836;
+  --surface-2:#1C3546;
+  --surface-3:#24455A;
+  --line:rgba(226,246,255,.10);
+  --line-2:rgba(226,246,255,.18);
+
+  /* 语义色 */
+  --amber:#FFBC6B;
+  --amber-dim:rgba(255,188,107,.16);
+  --cyan:#73D9D5;
+  --cyan-dim:rgba(115,217,213,.14);
+  --ink:#F9FAF3;
+  --ink-2:#E4EDF3;
+  --muted:#93A9B6;
+  --muted-2:#7E95A3;
+  --on-primary:#0B1622;
+  --ok:#7BD88F;
+  --danger:#FF8A80;
+
+  /* 图表推导色（由主色派生，集中定义避免各页各写一套） */
+  --chart-curve:var(--cyan);
+  --chart-horizon:rgba(226,246,255,.42);
+  --chart-grid:rgba(226,246,255,.10);
+  --chart-tick:var(--muted);
+  --chart-golden:rgba(255,188,107,.30);
+  --chart-blue:rgba(115,217,213,.26);
+
+  /* 间距（4vp 网格） */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px; --s8:40px;
+
+  /* 圆角 */
+  --r-sm:9px; --r-md:12px; --r-lg:20px; --r-pill:999px;
+
+  /* 字级 */
+  --t-display:34px; --t-h1:24px; --t-h2:19px; --t-title:16px;
+  --t-body:14px; --t-body-s:12.5px; --t-cap:11.5px; --t-micro:10px;
+
+  /* 控件 */
+  --touch:48px; --touch-sm:34px;
+  --nav-h:62px;
+
+  /* 动效 */
+  --m-fast:120ms; --m-base:200ms; --m-slow:280ms;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+
+/* 浅色：暖纸基底（不是简单反色，仍保持琥珀/青的双色语义） */
+body.light{
+  color-scheme: light;
+  --bg:#F4F1EA;
+  --bg-2:#EFE9DE;
+  --surface:#FFFFFF;
+  --surface-2:#F0EAE0;
+  --surface-3:#E6DFD2;
+  --line:rgba(20,31,42,.10);
+  --line-2:rgba(20,31,42,.18);
+  --amber:#9A5A0C;
+  --amber-dim:rgba(154,90,12,.12);
+  --cyan:#116C69;
+  --cyan-dim:rgba(17,108,105,.12);
+  --ink:#141F2A;
+  --ink-2:#22303C;
+  --muted:#52646F;
+  --muted-2:#5E7180;
+  --on-primary:#FFF8EC;
+  --chart-curve:#116C69;
+  --chart-horizon:rgba(20,31,42,.45);
+  --chart-grid:rgba(20,31,42,.12);
+  --chart-tick:#52646F;
+  --chart-golden:rgba(154,90,12,.22);
+  --chart-blue:rgba(17,108,105,.20);
+}
+
+/* 基线重置：避免浏览器默认样式泄漏（白底按钮、黑字链接、系统字体不一致） */
+*,*::before,*::after{box-sizing:border-box}
+html,body{
+  margin:0; padding:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"HarmonyOS Sans SC","Noto Sans SC",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:var(--t-body);
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+button,select,input,textarea{
+  font:inherit; color:inherit; background:none; border:0; margin:0;
+  -webkit-appearance:none; appearance:none;
+}
+button{cursor:pointer; min-height:var(--touch-sm)}
+a{color:var(--cyan); text-decoration:none}
+a:hover{text-decoration:underline}
+select{
+  background:var(--surface); color:var(--ink);
+  border:1px solid var(--line-2); border-radius:var(--r-sm);
+  padding:0 8px; height:32px;
+}
+select option{background:var(--surface); color:var(--ink)}
+:focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+
+/* 通用原子类（原型内多处复用） */
+.num{font-variant-numeric:tabular-nums}
+.micro{font-size:var(--t-micro); letter-spacing:.08em; color:var(--muted); text-transform:uppercase}
+.cap{font-size:var(--t-cap); color:var(--muted)}
+
+.btn{
+  min-height:var(--touch);
+  padding:0 14px;
+  border-radius:var(--r-md);
+  border:1px solid var(--line-2);
+  background:var(--surface-2);
+  color:var(--ink);
+  font-size:var(--t-body-s);
+  font-weight:600;
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  transition:background var(--m-fast) var(--ease), border-color var(--m-fast) var(--ease);
+}
+.btn:hover{background:var(--surface-3)}
+.btn.primary{background:var(--amber); border-color:var(--amber); color:var(--on-primary)}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn.ghost{background:transparent}
+.btn:disabled,.btn[aria-disabled="true"]{opacity:.42; cursor:not-allowed}
+
+.chip{
+  display:inline-flex; align-items:center; gap:5px;
+  height:24px; padding:0 9px; border-radius:var(--r-pill);
+  border:1px solid var(--line-2); font-size:var(--t-micro); color:var(--muted);
+}
+.chip.amber{border-color:rgba(255,188,107,.45); background:var(--amber-dim); color:var(--amber)}
+.chip.cyan{border-color:rgba(115,217,213,.40); background:var(--cyan-dim); color:var(--cyan)}
+
+body.reduce *,body.reduce *::before,body.reduce *::after{
+  transition:none !important; animation:none !important;
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition:none !important; animation:none !important}
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>UI-1B-R2 原型自检</title>
+<style>
+body{background:#0B1622;color:#F9FAF3;font:12px/1.6 "HarmonyOS Sans SC",system-ui,sans-serif;padding:14px}
+h1{font-size:14px;margin:0 0 6px}
+.row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid rgba(226,246,255,.10)}
+.row b{width:58px;flex:none;color:#93A9B6;font-weight:500}
+.row span{flex:1}
+.ok{color:#7BD88F}.bad{color:#FF8A80}.warn{color:#FFBC6B}
+</style></head><body>
+<h1>self-check（CSS/资源/对比度/控件尺寸）</h1>
+<div id="out"></div>
+<script>
+const out = document.getElementById('out');
+const rows = [];
+function line(name, ok, detail) {
+  const cls = ok === true ? 'ok' : (ok === false ? 'bad' : 'warn');
+  rows.push(`<div class="row"><b>${name}</b><span class="${cls}">${detail}</span></div>`);
+}
+function shown(el){return el && el.offsetWidth > 0 && el.offsetHeight > 0;}
+const css = document.createElement('link');
+css.rel = 'stylesheet';
+css.href = '../tokens.css';
+document.head.appendChild(css);
+css.onerror = () => { line('tokens.css', false, '404 / 加载失败'); flush(); };
+css.onload = () => {
+  line('tokens.css', true, 'HTTP OK（同目录加载成功）');
+  // computed style：必须来自 Token，不能是浏览器默认黑/白
+  const bodyBg = getComputedStyle(document.body).backgroundColor;
+  const bodyFg = getComputedStyle(document.body).color;
+  line('body bg', bodyBg === 'rgb(11, 22, 34)', bodyBg);
+  line('body fg', bodyFg === 'rgb(249, 250, 243)', bodyFg);
+  const btn = document.createElement('button');
+  btn.className = 'btn primary'; btn.textContent = '反向寻光';
+  document.body.appendChild(btn);
+  const bs = getComputedStyle(btn);
+  const h = btn.getBoundingClientRect().height;
+  line('主按钮高度', h >= 47.5, h.toFixed(1) + 'px（目标 ≥48）');
+  line('主按钮底色', bs.backgroundColor === 'rgb(255, 188, 107)', bs.backgroundColor);
+  line('主按钮字色', bs.color === 'rgb(11, 22, 34)', bs.color);
+  const sel = document.createElement('select'); document.body.appendChild(sel);
+  line('select 底色', getComputedStyle(sel).backgroundColor !== 'rgba(0, 0, 0, 0)',
+    getComputedStyle(sel).backgroundColor);
+  // 对比度（WCAG 相对亮度，AA 目标 4.5:1）
+  function lum(c) {
+    const m = c.match(/\d+/g).map(Number).slice(0, 3).map((v) => {
+      const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2];
+  }
+  function ratio(a, b) { const l1 = lum(a), l2 = lum(b); const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05); }
+  line('正文对比度', ratio(bodyFg, bodyBg) >= 4.5, ratio(bodyFg, bodyBg).toFixed(2) + ':1（AA 4.5）');
+  line('主按钮对比度', ratio(bs.color, bs.backgroundColor) >= 4.5,
+    ratio(bs.color, bs.backgroundColor).toFixed(2) + ':1');
+  // 关键 Token 是否可读
+  const cs = getComputedStyle(document.documentElement);
+  line('--amber', cs.getPropertyValue('--amber').trim() === '#FFBC6B', cs.getPropertyValue('--amber').trim());
+  line('--touch', cs.getPropertyValue('--touch').trim() === '48px', cs.getPropertyValue('--touch').trim());
+  flush();
+};
+function flush() {
+  out.innerHTML = rows.join('');
+  if (!rows.some((r) => r.includes('bad'))) line('结果', true, 'PASS（无 FAIL）');
+  else line('结果', false, '存在 FAIL 项');
+  out.innerHTML = rows.join('');
+}
+setTimeout(() => { if (rows.length === 0) { line('tokens.css', false, '超时未加载'); flush(); } }, 3000);
+</script>
+</body></html>

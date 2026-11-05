@@ -63,31 +63,54 @@ function phaseOf(alt) {
 
 const STEP = 5 * 60 * 1000; // 5 分钟采样，足够还原曲线且体积可控
 
-function build(name, lat, lon, dayStartUtc, dayEndUtc, tzOffsetMin, extra) {
+function offsetMinutesAt(utcMs, tzId) {
+  // 以 IANA 时区求该绝对时刻的真实本地偏移（分钟）。原型用浏览器 Intl；
+  // 目标 API 26 的生产实现使用已验证的 TimeUtil.resolveLocal，两者语义需一致。
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tzId, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const parts = dtf.formatToParts(new Date(utcMs));
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'));
+  return Math.round((asUtc - Math.floor(utcMs / 1000) * 1000) / 60000);
+}
+
+function build(name, lat, lon, tzId, dayStartUtc, dayEndUtc, extra) {
   const samples = [];
-  for (let t = dayStartUtc; t <= dayEndUtc; t += STEP) {
+  for (let t = dayStartUtc; t < dayEndUtc; t += STEP) {
     const p = position(t, lat, lon);
-    samples.push([t, Number(p.alt.toFixed(2)), Number(p.az.toFixed(1)), phaseOf(p.alt)]);
+    samples.push([t, Number(p.alt.toFixed(2)), Number(p.az.toFixed(1)), phaseOf(p.alt), offsetMinutesAt(t, tzId)]);
   }
   const segments = [];
   for (const s of samples) {
     const ph = s[3];
+    const segStart = s[0];
+    const segEnd = Math.min(s[0] + STEP, dayEndUtc);   // 末尾片段裁到真实日终点
     const last = segments[segments.length - 1];
-    if (last && last[0] === ph && s[0] - last[2] <= STEP) {
-      last[2] = s[0] + STEP;
+    if (last && last[0] === ph && Math.abs(last[2] - segStart) < 1) {
+      last[2] = segEnd;
     } else {
-      segments.push([ph, s[0], s[0] + STEP]);
+      segments.push([ph, segStart, segEnd]);
     }
+  }
+  // 不变量：首段从日界开始，末段在日界结束，逐段非负且无重叠
+  if (segments.length > 0) {
+    segments[0][1] = dayStartUtc;
+    segments[segments.length - 1][2] = dayEndUtc;
   }
   const shot = segments.filter((g) => g[0] === 'golden' || g[0] === 'blue');
   const goldenOnly = segments.filter((g) => g[0] === 'golden');
   const pick = goldenOnly.length > 0 ? goldenOnly[0] : (shot.length > 0 ? shot[0] : null);
   const nowUtc = (extra && extra.nowUtc) || (pick !== null ? Math.round((pick[1] + pick[2]) / 2) : dayStartUtc + 12 * 3600000);
   const nowPos = position(nowUtc, lat, lon);
+  const covered = segments.reduce((acc, g) => acc + (g[2] - g[1]), 0);
   return {
-    name, lat, lon, tzOffsetMin,
+    name, lat, lon, tzId, tzOffsetMin: offsetMinutesAt(nowUtc, tzId),
     dayStartUtc, dayEndUtc,
     dayHours: Number(((dayEndUtc - dayStartUtc) / 3600000).toFixed(2)),
+    segmentCoveredMs: covered,
     samples, segments, windows: shot,
     nowUtc, nowAlt: Number(nowPos.alt.toFixed(2)), nowAz: Number(nowPos.az.toFixed(1)),
     note: (extra && extra.note) || ''
@@ -96,19 +119,19 @@ function build(name, lat, lon, dayStartUtc, dayEndUtc, tzOffsetMin, extra) {
 
 const D = Date.UTC;
 const fixtures = {
-  shanghaiGolden: build('上海 · 黄金时段进行中', 31.2304, 121.4737,
-    D(2026, 10, 4, 16, 0, 0), D(2026, 10, 5, 16, 0, 0), 480, {}),
-  shanghaiNight: build('上海 · 夜间', 31.2304, 121.4737,
-    D(2026, 10, 4, 16, 0, 0), D(2026, 10, 5, 16, 0, 0), 480,
+  shanghaiGolden: build('上海 · 黄金时段进行中', 31.2304, 121.4737, 'Asia/Shanghai',
+    D(2026, 10, 4, 16, 0, 0), D(2026, 10, 5, 16, 0, 0), {}),
+  shanghaiNight: build('上海 · 夜间', 31.2304, 121.4737, 'Asia/Shanghai',
+    D(2026, 10, 4, 16, 0, 0), D(2026, 10, 5, 16, 0, 0),
     { nowUtc: D(2026, 10, 4, 19, 30, 0) }),
-  tromsoDay: build('特罗姆瑟 · 极昼', 69.6492, 18.9553,
-    D(2026, 5, 20, 22, 0, 0), D(2026, 5, 21, 22, 0, 0), 120, {}),
-  tromsoNight: build('特罗姆瑟 · 极夜', 69.6492, 18.9553,
-    D(2026, 11, 20, 23, 0, 0), D(2026, 11, 21, 23, 0, 0), 60, {}),
-  nyDst: build('纽约 · DST 回拨日（25h）', 40.7128, -74.006,
-    D(2026, 10, 1, 4, 0, 0), D(2026, 10, 2, 5, 0, 0), -300, {}),
-  shanghai1969: build('上海 · 1970 年前（1969-12-31）', 31.2304, 121.4737,
-    D(1969, 11, 30, 16, 0, 0), D(1969, 11, 31, 16, 0, 0), 480, { nowUtc: D(1969, 11, 31, 2, 30, 0) })
+  tromsoDay: build('特罗姆瑟 · 极昼', 69.6492, 18.9553, 'Europe/Oslo',
+    D(2026, 5, 20, 22, 0, 0), D(2026, 5, 21, 22, 0, 0), {}),
+  tromsoNight: build('特罗姆瑟 · 极夜', 69.6492, 18.9553, 'Europe/Oslo',
+    D(2026, 11, 20, 23, 0, 0), D(2026, 11, 21, 23, 0, 0), {}),
+  nyDst: build('纽约 · DST 回拨日（25h）', 40.7128, -74.006, 'America/New_York',
+    D(2026, 10, 1, 4, 0, 0), D(2026, 10, 2, 5, 0, 0), {}),
+  shanghai1969: build('上海 · 1970 年前（1969-12-31）', 31.2304, 121.4737, 'Asia/Shanghai',
+    D(1969, 11, 30, 16, 0, 0), D(1969, 11, 31, 16, 0, 0), { nowUtc: D(1969, 11, 31, 2, 30, 0) })
 };
 
 const out = 'design/ui1b-r2/fixtures/fixtures.js';
@@ -122,3 +145,33 @@ for (const k of Object.keys(fixtures)) {
     'nowAlt=', f.nowAlt, 'nowAz=', f.nowAz);
 }
 console.log('written', out);
+
+// ---- 自测：任意日长都满足 [start,end) 分段不变量 ----
+function selfTest() {
+  const cases = [23, 23.5, 24, 24.5, 25];
+  let ok = true;
+  for (const hrs of cases) {
+    const start = D(2026, 2, 7, 16, 0, 0);
+    const end = start + Math.round(hrs * 3600000);
+    const f = build('selftest', 31.2304, 121.4737, 'Asia/Shanghai', start, end, {});
+    const cov = f.segments.reduce((a, g) => a + (g[2] - g[1]), 0);
+    let prevEnd = start, overlap = false, negative = false;
+    for (const g of f.segments) {
+      if (g[2] <= g[1]) negative = true;
+      if (g[1] < prevEnd - 1) overlap = true;
+      prevEnd = g[2];
+    }
+    const pass = cov === (end - start) && !overlap && !negative &&
+      f.segments[0][1] === start && f.segments[f.segments.length - 1][2] === end;
+    if (!pass) ok = false;
+    console.log(`selftest ${hrs}h covered=${((cov) / 3600000).toFixed(2)}h last=${f.segments[f.segments.length - 1][2] === end} ${pass ? 'PASS' : 'FAIL'}`);
+  }
+  // DST 重复小时：回拨日 01:30 EDT 与 01:30 EST 应给出不同偏移
+  const a = offsetMinutesAt(D(2026, 10, 1, 5, 30, 0), 'America/New_York'); // 01:30 EDT
+  const b = offsetMinutesAt(D(2026, 10, 1, 6, 30, 0), 'America/New_York'); // 01:30 EST
+  const dst = a === -240 && b === -300;
+  if (!dst) ok = false;
+  console.log(`selftest DST 01:30 EDT=${a} 01:30 EST=${b} ${dst ? 'PASS' : 'FAIL'}`);
+  console.log('SELFTEST', ok ? 'ALL PASS' : 'HAS FAILURE');
+}
+selfTest();
