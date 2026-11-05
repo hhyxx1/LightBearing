@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LightBearing · 最终首页方案（A + B 分段带 + C 下一窗口）</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+html,body{background:#07111a;padding:0;margin:0;overflow-x:hidden}
+.wrap{display:grid;grid-template-columns:1fr;width:100%;min-height:100vh;max-width:520px;margin:0 auto;
+  background:var(--bg);border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.rail{display:none}
+.main{display:flex;flex-direction:column;min-width:0}
+.inspector{display:flex;flex-direction:column}
+.statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;
+  font-size:11px;color:var(--muted);flex:none}
+.hdr{display:flex;align-items:flex-start;gap:8px;padding:2px 14px 8px;flex-wrap:wrap;min-width:0}
+.hdr .p{font-size:17px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
+.hdr .m{font-size:11.5px;color:var(--muted);margin-top:2px}
+.hdr .r{margin-left:auto;display:flex;gap:6px;align-items:center;min-width:0}
+.iconbtn{width:34px;height:34px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface);
+  color:var(--ink);display:grid;place-items:center;cursor:pointer}
+.iconbtn svg{width:18px;height:18px}
+select.scn{height:30px;border-radius:9px;background:var(--surface);color:var(--ink);
+  border:1px solid var(--line-2);font-size:11px;padding:0 4px;max-width:96px;min-width:0}
+/* 仪表 */
+.instrument{margin:0 12px;border:1px solid var(--line);border-radius:var(--r-lg);
+  background:linear-gradient(180deg,#0E2130,#0B1622);overflow:hidden}
+.inst-top{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 0;min-width:0}
+.az{flex:1}
+.az b{display:block;font-size:34px;line-height:1;font-weight:800;color:var(--amber)}
+.alt b{display:block;font-size:34px;line-height:1;font-weight:800;color:var(--cyan)}
+.az span,.alt span{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+.phase{text-align:right}
+.phase b{display:block;font-size:16px;font-weight:700}
+.phase span{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+.inst-meta{display:flex;gap:10px;flex-wrap:wrap;padding:8px 14px 0;font-size:11px;color:var(--muted)}
+.chartbox{position:relative;margin-top:6px;touch-action:none;cursor:crosshair}
+.chartbox svg{display:block;width:100%;height:186px}
+.chartbox .tip{position:absolute;top:6px;right:10px;font-size:10.5px;color:var(--muted)}
+/* 全天分段带 */
+.dayband{padding:10px 14px 12px}
+.band-lbl{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;min-width:0}
+.band-lbl b{font-size:12px;font-weight:600;letter-spacing:.02em}
+.band-lbl span{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56%}
+.band{display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line);
+  position:relative;cursor:pointer}
+.band .seg{position:relative;height:100%}
+.band .now{position:absolute;top:-3px;bottom:-3px;width:2px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:7px;font-size:10px;color:var(--muted)}
+.legend i{width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:4px;vertical-align:-1px}
+.axis{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-top:4px}
+/* 下一窗口 */
+.next{margin:0 12px;display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:14px;
+  border:1px solid rgba(255,188,107,.32);background:rgba(255,188,107,.08);cursor:pointer}
+.next .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+.next .t{flex:1;min-width:0}
+.next b{display:block;font-size:14px;font-weight:700}
+.next span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.next .go{font-size:11px;color:var(--amber)}
+/* 详情 */
+.details{margin:10px 12px 0;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)}
+.details button.head{width:100%;height:42px;display:flex;align-items:center;gap:8px;padding:0 13px;
+  background:transparent;border:none;color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer}
+.details button.head .chev{margin-left:auto;transition:transform var(--m-fast) var(--ease)}
+.details.open button.head .chev{transform:rotate(180deg)}
+.details .body{display:none}
+.details.open .body{display:block}
+.kv{display:flex;align-items:baseline;gap:10px;padding:8px 13px;border-top:1px solid var(--line);font-size:12px}
+.kv b{margin-left:auto;font-weight:700}
+.actions{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr);gap:8px;padding:12px 12px 8px}
+.actions .btn{font-size:12px}
+/* 底部导航（语义化图标） */
+.navbar{height:62px;border-top:1px solid var(--line);display:flex;align-items:center;
+  justify-content:space-between;padding:0 2px;background:rgba(7,16,26,.94);flex:none;margin-top:auto}
+.navbar button{background:none;border:none;color:var(--muted);display:grid;justify-items:center;gap:3px;
+  font-size:9.5px;cursor:pointer;padding:6px 2px;border-radius:10px;position:relative;min-width:52px}
+.navbar button svg{width:21px;height:21px}
+.navbar button.on{color:var(--amber)}
+.navbar button.on::after{content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+  width:14px;height:2px;border-radius:1px;background:var(--amber)}
+/* 浅色 */
+body.light{--bg:#F4F1EA;--bg-2:#EFE9DE;--surface:#FFFFFF;--surface-2:#EFE9DE;
+  --line:rgba(20,31,42,.10);--line-2:rgba(20,31,42,.18);--ink:#141F2A;--muted:#52646F;color:#141F2A}
+body.light .instrument{background:linear-gradient(180deg,#FFFDF8,#F6F1E7)}
+body.reduce *{transition:none!important;animation:none!important}
+/* ≥600：双栏 */
+@media (min-width:600px){
+  .wrap{max-width:none;grid-template-columns:1fr}
+  .hdr .p{font-size:19px}
+  .chartbox svg{height:240px}
+}
+/* ≥900：曲线主区 + 右侧检查器 */
+@media (min-width:900px){
+  .wrap{max-width:1180px;grid-template-columns:1fr 320px;grid-template-areas:"main side"}
+  .main{grid-area:main}.inspector{grid-area:side;border-left:1px solid var(--line);
+    background:rgba(7,16,26,.35)}
+  .inspector .instrument{margin:10px 12px 0}
+  .inspector .dayband{padding-top:6px}
+  .chartbox svg{height:300px}
+  .actions{grid-template-columns:1fr}
+}
+/* ≥1200：加侧栏导航 */
+@media (min-width:1200px){
+  .wrap{max-width:1480px;grid-template-columns:232px 1fr 340px;
+    grid-template-areas:"rail main side"}
+  .rail{grid-area:rail;display:flex;flex-direction:column;gap:4px;padding:14px 10px;
+    border-right:1px solid var(--line);background:rgba(7,16,26,.45)}
+  .rail button{display:flex;align-items:center;gap:10px;height:42px;padding:0 12px;border-radius:11px;
+    border:1px solid transparent;background:none;color:var(--muted);font-size:12.5px;cursor:pointer}
+  .rail button svg{width:19px;height:19px}
+  .rail button.on{background:var(--surface-2);border-color:rgba(255,188,107,.35);color:var(--ink)}
+  .navbar{display:none}
+}
+</style></head>
+<body>
+<div class="wrap" id="wrap">
+  <aside class="rail" id="rail">
+    <button class="on" data-nav="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>今日光线</button>
+    <button data-nav="path"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 18h18M4 16a8 8 0 0 1 16 0"/><path d="M12 3v4"/></svg>太阳轨迹</button>
+    <button data-nav="reverse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/></svg>反向寻光</button>
+    <button data-nav="plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>拍摄计划</button>
+    <button data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2L17 7M7 17l-1.8 1.8"/></svg>设置</button>
+  </aside>
+
+  <div class="main">
+    <div class="statusbar"><span class="num" id="sbTime">--:--</span><span class="num" id="sbTz">UTC+08:00</span></div>
+    <div class="hdr">
+      <div>
+        <div class="p" id="place">外部·外滩</div>
+        <div class="m" id="placedate">2026-11-05 周四 · Asia/Shanghai</div>
+      </div>
+      <div class="r">
+        <select class="scn" id="scn" title="切换设计数据场景">
+          <option value="shanghaiGolden">上海 · 黄金</option>
+          <option value="shanghaiNight">上海 · 夜间</option>
+          <option value="tromsoDay">极昼</option>
+          <option value="tromsoNight">极夜</option>
+          <option value="nyDst">DST 25h</option>
+          <option value="shanghai1969">1969</option>
+        </select>
+        <button class="iconbtn" id="themeBtn" title="切换深浅色" aria-label="切换深浅色">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.4M12 19v2.4M2.6 12h2.4M19 12h2.4M5.1 5.1l1.7 1.7M17.2 17.2l1.7 1.7M18.9 5.1l-1.7 1.7M6.8 17.2l-1.7 1.7"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <section class="instrument">
+      <div class="inst-top">
+        <div class="az"><b class="num" id="az">--</b><span id="azLbl">方位角</span></div>
+        <div class="alt"><b class="num" id="alt">--</b><span>太阳高度角</span></div>
+        <div class="phase"><b id="phase">--</b><span>光线阶段</span></div>
+      </div>
+      <div class="inst-meta"><span class="num" id="selTime">--:--</span><span class="num" id="selOff">UTC+08:00</span><span id="selNote"></span></div>
+      <div class="chartbox" id="chartbox">
+        <svg id="chart" viewBox="0 0 360 186" preserveAspectRatio="none"></svg>
+        <div class="tip">拖动曲线选择时刻</div>
+      </div>
+    </section>
+
+    <section class="dayband">
+      <div class="band-lbl"><b>全天光线</b><span id="dayLen"></span></div>
+      <div class="band" id="band"></div>
+      <div class="axis num" id="axis"></div>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <div class="next" id="next" role="button" tabindex="0">
+      <span class="dot"></span>
+      <div class="t"><b id="nextTitle">--</b><span id="nextSub">--</span></div>
+      <span class="go" id="nextGo">定位</span>
+    </div>
+
+    <section class="details" id="details">
+      <button class="head" id="detBtn">
+        光线时段明细
+        <svg class="chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="body" id="detBody"></div>
+    </section>
+
+    <div class="actions">
+      <button class="btn primary">反向寻光</button>
+      <button class="btn">完整日轨</button>
+      <button class="btn">机位 / 计划</button>
+    </div>
+
+    <nav class="navbar" id="navbar">
+      <button class="on" data-nav="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>今日</button>
+      <button data-nav="path"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 18h18M4 16a8 8 0 0 1 16 0"/><path d="M12 3v4"/></svg>轨迹</button>
+      <button data-nav="plan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>计划</button>
+      <button data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2L17 7M7 17l-1.8 1.8"/></svg>设置</button>
+      <button data-nav="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>更多</button>
+    </nav>
+  </div>
+
+  <aside class="inspector" id="inspector"></aside>
+</div>
+<script src="fixtures/fixtures.js"></script>
+<script>
+const PHASE = {
+  night:{c:'#0A1620', label:'夜间'},
+  astro:{c:'#102A38', label:'天文曙暮'},
+  nautical:{c:'#153A4C', label:'航海曙暮'},
+  blue:{c:'rgba(115,217,213,.55)', label:'蓝调'},
+  golden:{c:'rgba(255,188,107,.62)', label:'黄金'},
+  day:{c:'rgba(226,246,255,.16)', label:'白昼'}
+};
+const PHASE_CN = {night:'夜间', astro:'天文曙暮', nautical:'航海曙暮', blue:'蓝调', golden:'黄金', day:'白昼'};
+let fx = null, selUtc = 0, isLight = false;
+
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, '0');
+
+function localParts(utcMs, offMin) {
+  const d = new Date(utcMs + offMin * 60000);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth() + 1, d: d.getUTCDate(),
+    h: d.getUTCHours(), mi: d.getUTCMinutes(), wd: d.getUTCDay() };
+}
+const WD = ['周日','周一','周二','周三','周四','周五','周六'];
+function fmtHM(utcMs) { const p = localParts(utcMs, fx.tzOffsetMin); return pad(p.h) + ':' + pad(p.mi); }
+function fmtDate(utcMs) { const p = localParts(utcMs, fx.tzOffsetMin);
+  return `${p.y}-${pad(p.mo)}-${pad(p.d)} ${WD[p.wd]}`; }
+function fmtOffset(min) { const s = min < 0 ? '-' : '+'; const a = Math.abs(min);
+  return `UTC${s}${pad(Math.floor(a / 60))}:${pad(a % 60)}`; }
+
+function phaseAt(utcMs) {
+  let best = fx.samples[0];
+  for (const s of fx.samples) { if (Math.abs(s[0] - utcMs) < Math.abs(best[0] - utcMs)) best = s; }
+  return { alt: best[1], az: best[2], ph: best[3], utc: best[0] };
+}
+
+function drawChart() {
+  const svg = $('chart'), W = 360, H = 186, L = 30, R = 6, T = 12, B = 22;
+  const alts = fx.samples.map((s) => s[1]);
+  let lo = Math.min(-10, Math.floor(Math.min(...alts) / 10) * 10);
+  let hi = Math.max(20, Math.ceil(Math.max(...alts) / 10) * 10);
+  const x = (u) => L + ((u - fx.dayStartUtc) / (fx.dayEndUtc - fx.dayStartUtc)) * (W - L - R);
+  const y = (a) => T + (1 - (a - lo) / (hi - lo)) * (H - T - B);
+  let g = '';
+  // 高度刻度 + 地平线
+  const ticks = [];
+  for (let a = lo; a <= hi; a += 20) ticks.push(a);
+  if (!ticks.includes(0)) ticks.push(0);
+  ticks.sort((a, b) => a - b);
+  for (const a of ticks) {
+    const yy = y(a).toFixed(1);
+    const isH = a === 0;
+    g += `<line x1="${L}" y1="${yy}" x2="${W - R}" y2="${yy}" stroke="${isH ? 'rgba(226,246,255,.42)' : 'rgba(226,246,255,.10)'}" stroke-width="${isH ? 1.6 : 1}" ${isH ? '' : 'stroke-dasharray="4 5"'}/>`;
+    g += `<text x="2" y="${Number(yy) - 2}" fill="#93A9B6" font-size="9">${a}°</text>`;
+  }
+  // 黄金/蓝调区间（真实分段，仅地平线附近淡淡铺底，不遮挡曲线）
+  for (const seg of fx.segments) {
+    if (seg[0] !== 'golden' && seg[0] !== 'blue') continue;
+    const x0 = x(seg[1]), x1 = x(seg[2]);
+    g += `<rect x="${x0.toFixed(1)}" y="${y(0).toFixed(1)}" width="${Math.max(1, x1 - x0).toFixed(1)}" height="${(H - B - y(0)).toFixed(1)}" fill="${seg[0] === 'golden' ? 'rgba(255,188,107,.30)' : 'rgba(115,217,213,.26)'}"/>`;
+  }
+  // 真实曲线（逐 5 分钟采样，未做平滑/贝塞尔）
+  let pts = '';
+  for (const s of fx.samples) { pts += `${x(s[0]).toFixed(1)},${y(s[1]).toFixed(1)} `; }
+  g += `<polyline points="${pts}" fill="none" stroke="${isLight ? '#116C69' : '#73D9D5'}" stroke-width="2"/>`;
+  // 当前选中标记
+  const p = phaseAt(selUtc);
+  const mx = x(p.utc), my = y(p.alt);
+  g += `<line x1="${mx.toFixed(1)}" y1="${T}" x2="${mx.toFixed(1)}" y2="${H - B}" stroke="rgba(255,188,107,.5)" stroke-dasharray="3 4"/>`;
+  g += `<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5.5" fill="#FFBC6B" stroke="#0B1622" stroke-width="2.5"/>`;
+  svg.innerHTML = g;
+  svg.dataset.lo = lo; svg.dataset.hi = hi;
+}
+
+function drawBand() {
+  const total = fx.dayEndUtc - fx.dayStartUtc;
+  let html = '';
+  for (const seg of fx.segments) {
+    const w = ((seg[2] - seg[1]) / total) * 100;
+    html += `<div class="seg" style="width:${w}%;background:${PHASE[seg[0]].c}" title="${PHASE_CN[seg[0]]} ${fmtHM(seg[1])}–${fmtHM(seg[2])}"></div>`;
+  }
+  const nowPct = ((selUtc - fx.dayStartUtc) / total) * 100;
+  html += `<div class="now" style="left:${nowPct}%"></div>`;
+  $('band').innerHTML = html;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((r) => fmtHM(fx.dayStartUtc + r * total));
+  $('axis').innerHTML = ticks.map((t) => `<span>${t}</span>`).join('');
+  $('legend').innerHTML = Object.keys(PHASE).map((k) =>
+    `<span><i style="background:${PHASE[k].c}"></i>${PHASE[k].label}</span>`).join('');
+}
+
+function windowInfo() {
+  const segs = fx.segments;
+  const cur = segs.find((s) => selUtc >= s[1] && selUtc < s[2]);
+  if (cur && (cur[0] === 'golden' || cur[0] === 'blue')) {
+    const mins = Math.max(0, Math.round((cur[2] - selUtc) / 60000));
+    return { current: true, phase: cur[0], end: cur[2], mins,
+      title: `当前处于${PHASE_CN[cur[0]]}时段`, sub: `预计 ${fmtHM(cur[2])} 结束 · 剩余约 ${mins} 分钟` };
+  }
+  const found = segs.filter((s) => (s[0] === 'golden' || s[0] === 'blue') && s[1] > selUtc)
+    .sort((a, b) => a[1] - b[1])[0];
+  if (!found) return { current: false, none: true,
+    title: '该日无可用可拍时段', sub: '当前日期与机位下没有计算出的黄金/蓝调窗口' };
+  return { current: false, phase: found[0], start: found[1], end: found[2],
+    title: `下一可拍：${PHASE_CN[found[0]]} ${fmtHM(found[1])}–${fmtHM(found[2])}`,
+    sub: `距现在约 ${Math.round((found[1] - selUtc) / 60000)} 分钟` };
+}
+
+function render() {
+  const p = phaseAt(selUtc);
+  $('place').textContent = fx.name.split('·')[0].trim();
+  $('placedate').textContent = `${fmtDate(fx.dayStartUtc)} · ${fmtOffset(fx.tzOffsetMin)}`;
+  $('sbTime').textContent = fmtHM(selUtc);
+  $('sbTz').textContent = fmtOffset(fx.tzOffsetMin);
+  $('az').textContent = p.az.toFixed(1) + '°';
+  $('alt').textContent = p.alt.toFixed(1) + '°';
+  $('phase').textContent = PHASE_CN[p.ph];
+  $('selTime').textContent = fmtHM(selUtc);
+  $('selOff').textContent = fmtOffset(fx.tzOffsetMin);
+  $('selNote').textContent = fx.dayHours === 24 ? '' : `当地日 ${fx.dayHours} 小时`;
+  $('dayLen').textContent = `当地日 ${fx.dayHours} 小时 · 点击定位`;
+  drawChart(); drawBand();
+  const w = windowInfo();
+  $('nextTitle').textContent = w.title;
+  $('nextSub').textContent = w.sub;
+  $('nextGo').textContent = w.none ? '' : (w.current ? '查看' : '定位');
+  $('next').dataset.target = w.start !== undefined ? w.start : (w.current ? selUtc : '');
+  // 明细
+  const rows = fx.windows.map((s) =>
+    `<div class="kv">${PHASE_CN[s[0]]}<b class="num">${fmtHM(s[1])} – ${fmtHM(s[2])}</b></div>`).join('');
+  $('detBody').innerHTML = rows + `<div class="kv">日出前/后曙暮与白昼分段见上方色带（比例真实）<b></b></div>`;
+  if (isLight) document.body.classList.add('light'); else document.body.classList.remove('light');
+  drawChart();
+}
+
+function load(scn) {
+  fx = window.LB_FIXTURES[scn];
+  selUtc = fx.nowUtc;
+  render();
+}
+
+function seekFromX(clientX) {
+  const box = $('chartbox').getBoundingClientRect();
+  const svg = $('chart');
+  const W = 360, L = 30, R = 6;
+  const ratioPx = (clientX - box.left) / box.width;
+  const px = ratioPx * W;
+  const ratio = Math.max(0, Math.min(1, (px - L) / (W - L - R)));
+  selUtc = Math.round(fx.dayStartUtc + ratio * (fx.dayEndUtc - fx.dayStartUtc));
+  render();
+}
+
+let dragging = false;
+$('chartbox').addEventListener('pointerdown', (e) => { dragging = true; seekFromX(e.clientX); });
+window.addEventListener('pointermove', (e) => { if (dragging) seekFromX(e.clientX); });
+window.addEventListener('pointerup', () => { dragging = false; });
+$('next').addEventListener('click', () => {
+  const t = $('next').dataset.target;
+  if (t) { selUtc = Number(t); render(); }
+});
+$('detBtn').addEventListener('click', () => $('details').classList.toggle('open'));
+$('themeBtn').addEventListener('click', () => {
+  isLight = !isLight; document.body.classList.toggle('light', isLight); drawChart();
+});
+$('scn').addEventListener('change', (e) => load(e.target.value));
+document.querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-nav]').forEach((x) => x.classList.remove('on'));
+  b.classList.add('on');
+}));
+// URL 参数：?scenario=night&theme=light
+const q = new URLSearchParams(location.search);
+if (q.get('theme') === 'light') { isLight = true; document.body.classList.add('light'); }
+if (q.get('reduce') === '1') document.body.classList.add('reduce');
+document.querySelectorAll('.navbar button').forEach((b, i) => { if (i === 0) b.classList.add('on'); });
+load(q.get('scenario') || 'shanghaiGolden');
+</script>
+<div id="LB_PROBE" style="display:none"></div>
+<script>
+if (new URLSearchParams(location.search).get('probe') === '1') {
+  const d = document.createElement('div');
+  d.style.cssText='position:fixed;left:0;top:0;z-index:99;background:#000;color:#0f0;font:11px monospace;padding:2px 4px';
+  const w = document.getElementById('wrap');
+  d.textContent = 'iw='+window.innerWidth+' sw='+document.documentElement.scrollWidth+
+    ' wrap='+w.offsetWidth+' main='+document.querySelector('.main').offsetWidth;
+  document.body.appendChild(d);
+}
+</script>
+</body></html>

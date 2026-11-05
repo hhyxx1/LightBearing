@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>UI-1B-R2 shot frame</title>
+<style>
+html,body{margin:0;padding:0;background:#07111a;overflow:hidden}
+iframe{border:0;display:block;background:#07111a}
+</style></head><body>
+<script>
+// 用固定尺寸 iframe 精确控制原型 CSS 视口，避免无头浏览器最小窗口宽度造成的假裁切。
+const q = new URLSearchParams(location.search);
+const w = Number(q.get('w') || 390);
+const h = Number(q.get('h') || 844);
+const extra = [];
+for (const k of ['theme', 'scenario', 'reduce']) {
+  if (q.get(k)) extra.push(k + '=' + encodeURIComponent(q.get(k)));
+}
+const f = document.createElement('iframe');
+f.width = w;
+f.height = h;
+f.src = '../final-home.html' + (extra.length ? '?' + extra.join('&') : '');
+document.body.appendChild(f);
+</script>
+</body></html>
