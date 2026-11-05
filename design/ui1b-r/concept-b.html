@@ -1,0 +1,92 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>方案 B · Solar Timeline</title><link rel="stylesheet" href="tokens.css">
+<style>
+.hdr{padding:12px 16px 4px;display:flex;justify-content:space-between;align-items:baseline}
+.hdr .d{font-size:var(--t-cap);color:var(--muted)}
+.hdr .p{font-size:15px;font-weight:700}
+.next{margin:10px 12px 0;padding:14px;border-radius:var(--r-lg);
+  background:linear-gradient(135deg,rgba(255,188,107,.12),rgba(21,40,54,.2));border:1px solid rgba(255,188,107,.3)}
+.next .lbl{font-size:var(--t-micro);letter-spacing:.1em;color:var(--amber)}
+.next .big{font-size:30px;font-weight:800;margin-top:4px}
+.next .sub{font-size:var(--t-cap);color:var(--muted);margin-top:2px}
+.next .bar{margin-top:10px;height:6px;border-radius:3px;background:rgba(226,246,255,.12);overflow:hidden}
+.next .bar i{display:block;height:100%;width:64%;background:var(--amber)}
+/* 全天时间轴：主视觉 */
+.day{padding:16px 12px 0}
+.day .label{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px}
+.day .label b{font-size:var(--t-h2)}
+.spark{height:96px;margin:0 4px}
+.spark svg{width:100%;height:100%;display:block}
+.ribbon{margin:6px 4px 0;height:44px;border-radius:8px;overflow:hidden;position:relative;
+  border:1px solid var(--line)}
+.ribbon .seg{position:absolute;top:0;bottom:0}
+.ribbon .night{background:#0A1620}
+.ribbon .penumbra{background:#12303c}
+.ribbon .gold{background:rgba(255,188,107,.55)}
+.ribbon .blue{background:rgba(115,217,213,.42)}
+.ribbon .now{width:2px;background:#fff;box-shadow:0 0 10px rgba(255,255,255,.8)}
+.ribbon .lbl{position:absolute;bottom:2px;font-size:9px;color:rgba(249,250,243,.85)}
+.axis{display:flex;justify-content:space-between;padding:5px 6px 0;font-size:var(--t-micro);color:var(--muted)}
+.windows{padding:10px 12px 0}
+.win{display:flex;align-items:center;gap:10px;padding:11px 12px;margin-bottom:8px;
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.win .t{flex:1;min-width:0}
+.win b{font-size:14px;font-weight:700}
+.win span{display:block;font-size:var(--t-micro);color:var(--muted);margin-top:2px}
+.win .len{font-size:var(--t-cap);color:var(--amber)}
+.actions{display:flex;gap:8px;padding:8px 12px 16px}
+.actions .btn{flex:1;font-size:12.5px}
+</style></head><body style="padding:20px">
+<div style="position:relative"><div class="phone"><span class="tag">CONCEPT B · COMPACT · DESIGN_DATA</span>
+  <div class="statusbar"><span class="num">09:41</span><span class="num">UTC+08:00</span></div>
+  <div class="content">
+    <div class="hdr"><div><div class="p">外滩</div><div class="d num">2026-11-05 周三 · 上海</div></div>
+      <span class="chip amber">黄金时段</span></div>
+
+    <div class="next">
+      <div class="lbl">下一可拍窗口</div>
+      <div class="big num">16:12 – 17:02</div>
+      <div class="sub num">黄金（夕）· 50 分钟 · 方位 246° / 高度 3.2°</div>
+      <div class="bar"><i></i></div>
+    </div>
+
+    <div class="day">
+      <div class="label"><b>全天光线</b><span class="cap num">09:41 · 高度 8.6°</span></div>
+      <div class="spark">
+        <svg viewBox="0 0 350 96" preserveAspectRatio="none">
+          <path d="M4 92 Q92 -30 175 26 Q258 -18 346 92" fill="none" stroke="#73D9D5" stroke-width="2"/>
+          <line x1="4" y1="72" x2="346" y2="72" stroke="rgba(226,246,255,.25)"/>
+          <circle cx="150" cy="34" r="5" fill="#FFBC6B" stroke="#0B1622" stroke-width="3"/>
+          <line x1="150" y1="34" x2="150" y2="96" stroke="rgba(255,188,107,.5)" stroke-dasharray="3 3"/>
+        </svg>
+      </div>
+      <div class="ribbon">
+        <div class="seg night" style="left:0;width:8%"></div>
+        <div class="seg blue" style="left:8%;width:4%"></div>
+        <div class="seg penumbra" style="left:12%;width:2%"></div>
+        <div class="seg gold" style="left:14%;width:11%"></div>
+        <div class="seg penumbra" style="left:25%;width:8%"></div>
+        <div class="seg" style="left:33%;width:44%;background:rgba(226,246,255,.10)"></div>
+        <div class="seg penumbra" style="left:77%;width:8%"></div>
+        <div class="seg gold" style="left:85%;width:11%"></div>
+        <div class="seg blue" style="left:96%;width:4%"></div>
+        <div class="now" style="left:41%"></div>
+        <div class="lbl num" style="left:14%">06:36</div>
+        <div class="lbl num" style="left:85%">16:12</div>
+      </div>
+      <div class="axis num"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    </div>
+
+    <div class="windows">
+      <div class="win"><div class="t"><b class="num">16:12 – 17:02</b><span>黄金（夕）· 方位 246°</span></div><div class="len num">50 min</div></div>
+      <div class="win"><div class="t"><b class="num">17:02 – 17:20</b><span>蓝调（夕）· 方位 252°</span></div><div class="len num">18 min</div></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary">反向寻光</button>
+      <button class="btn">完整日轨</button>
+    </div>
+  </div>
+  <div class="tabbar"><div class="on"><i></i>今日</div><div><i></i>轨迹</div><div><i></i>计划</div><div><i></i>设置</div><div><i></i>更多</div></div>
+</div></div>
+</body></html>

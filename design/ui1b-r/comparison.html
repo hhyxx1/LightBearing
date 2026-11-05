@@ -1,0 +1,51 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>UI-1B-R · 三套方案并排对比</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+body{padding:24px;background:#07111a;max-width:1500px;margin:0 auto}
+h1{font-size:20px;margin-bottom:4px}
+p.lead{font-size:12.5px;color:var(--muted);line-height:1.7;max-width:1100px}
+.row{display:flex;gap:22px;margin-top:18px;align-items:flex-start;flex-wrap:wrap}
+figure{margin:0;width:432px}
+figure img{width:100%;border:1px solid var(--line-2);border-radius:14px;display:block}
+figcaption{font-size:12px;color:var(--ink);margin-top:8px;font-weight:700}
+figcaption span{display:block;font-weight:400;color:var(--muted);margin-top:3px;line-height:1.6}
+table{width:100%;border-collapse:collapse;margin-top:22px;font-size:12px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-size:11px;letter-spacing:.06em}
+td b{color:var(--amber)}
+.note{margin-top:18px;border-left:2px solid var(--amber);background:rgba(255,188,107,.07);
+  padding:10px 14px;border-radius:8px;font-size:12px;color:var(--muted);line-height:1.7}
+</style></head><body>
+<h1>UI-1B-R · 三套首页方案（Compact，深色）</h1>
+<p class="lead">同一套设计 Token、同一批设计数据（外滩 09:41 黄金时段），只有**信息架构**不同。
+三套都未实现到生产代码；请选择一套后我再落地。</p>
+<div class="row">
+  <figure><img src="shots/concept-a-compact.png" alt="方案 A">
+    <figcaption>A · Precision Instrument
+      <span>仪表盘 + 三列读数 + 全天细条；信息密度最高，读数即主视觉。</span></figcaption></figure>
+  <figure><img src="shots/concept-b-compact.png" alt="方案 B">
+    <figcaption>B · Solar Timeline
+      <span>全天时间轴为主视觉，真实比例分段带 + 下一窗口卡片；时间导航最强。</span></figcaption></figure>
+  <figure><img src="shots/concept-c-compact.png" alt="方案 C">
+    <figcaption>C · Field Photographer
+      <span>先给结论（是否适合拍）+ 下一窗口 + 折叠细节；现场决策最快。</span></figcaption></figure>
+</div>
+
+<table>
+  <tr><th>验收指标</th><th>A · Precision Instrument</th><th>B · Solar Timeline</th><th>C · Field Photographer</th></tr>
+  <tr><td>视觉重心是否明确</td><td>明确：方位/高度大读数 + 仪表曲线</td><td>明确：全天时间轴横贯首屏</td><td>明确：结论卡「现在适合拍摄」</td></tr>
+  <tr><td>专业摄影工具定位</td><td><b>强</b>：最接近专业仪表</td><td>中强：偏时间规划</td><td>中：偏向导/现场助手</td></tr>
+  <tr><td>信息重复</td><td>低（日出日落只在明细行出现一次）</td><td><b>最低</b>（时段靠分段带 + 两个窗口卡表达）</td><td>中（结论 + 下一窗口有轻微重叠）</td></tr>
+  <tr><td>主次层级</td><td>读数 → 曲线 → 明细</td><td>下一窗口 → 全天分布 → 列表</td><td>结论 → 下一窗口 → 细节（渐进披露最好）</td></tr>
+  <tr><td>首屏能否完成核心判断</td><td>能：方位/高度/阶段/时段条齐全</td><td>能：知道现在位置与下一窗口</td><td>能：直接给「能否拍/还有多久」</td></tr>
+  <tr><td>时间/角度可读性</td><td><b>最强</b>（等宽数字、三列对齐）</td><td>强（时间轴与列表一致）</td><td>中（数字少，靠结论语法）</td></tr>
+  <tr><td>图表专业语义</td><td>强：地平线 + 高度刻度 + 真实时段段</td><td>强：分段带按真实比例，另有曲线缩略</td><td>弱：以结论为主，曲线移入二级页</td></tr>
+  <tr><td>交互入口自然度</td><td>底部三段按钮（反向寻光/日轨/计划）</td><td>时间轴可点段 + 底部双按钮</td><td>主 CTA 独占一行（最易发现）</td></tr>
+  <tr><td>深浅色协调基础</td><td>好：靠面与细线分层</td><td>好：分段带与底色对比充分</td><td>好：结论卡使用柔和径向渐变</td></tr>
+  <tr><td>扩展到平板/折叠/2-in-1</td><td><b>最好</b>：读数列可直接变双栏左仪表右明细</td><td>好：时间轴可横向延展为主区</td><td>中：结论卡在大屏会显得单薄</td></tr>
+</table>
+
+<div class="note">设计数据声明：三套原型的时刻、角度、时段长度均为 <b>DESIGN_DATA</b>，用于层级与比例评审，
+不代表真实计算结果；实现时必须由 SolarCalc / Timeline / lightWindows 提供。</div>
+</body></html>

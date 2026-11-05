@@ -1,0 +1,70 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>方案 C · Field Photographer</title><link rel="stylesheet" href="tokens.css">
+<style>
+.top{display:flex;align-items:center;gap:8px;padding:10px 16px}
+.top .p{font-size:14px;font-weight:700;flex:1}
+.verdict{margin:4px 12px 0;border-radius:22px;padding:18px 18px 16px;
+  background:radial-gradient(120% 120% at 85% -10%,rgba(255,188,107,.22),rgba(21,40,54,.6) 62%),var(--surface);
+  border:1px solid rgba(255,188,107,.32)}
+.verdict .state{font-size:var(--t-micro);letter-spacing:.14em;color:var(--amber)}
+.verdict h1{font-size:28px;font-weight:800;margin:6px 0 2px}
+.verdict .why{font-size:var(--t-body);color:var(--ink);opacity:.86}
+.verdict .nums{display:flex;gap:18px;margin-top:14px}
+.verdict .nums div b{font-size:20px;font-weight:800}
+.verdict .nums div span{display:block;font-size:var(--t-micro);color:var(--muted)}
+.next{margin:10px 12px 0;display:flex;align-items:center;gap:12px;padding:14px;
+  border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.next .clock{width:56px;height:56px;border-radius:16px;background:var(--amber-dim);
+  border:1px solid rgba(255,188,107,.45);display:grid;place-items:center;color:var(--amber);font-size:11px;font-weight:700}
+.next .t{flex:1;min-width:0}
+.next b{font-size:16px;font-weight:700}
+.next span{display:block;font-size:var(--t-cap);color:var(--muted);margin-top:3px}
+.hint{margin:10px 16px 0;font-size:var(--t-cap);color:var(--muted);line-height:1.6}
+.rail{margin:12px 12px 0;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.rail .r{display:flex;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);align-items:center}
+.rail .r:last-child{border-bottom:none}
+.rail .r b{flex:1;font-size:13.5px;font-weight:600}
+.rail .r span{font-size:var(--t-cap);color:var(--muted)}
+.cta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px 12px 16px}
+.cta .btn.big{grid-column:1 / span 2;height:56px;font-size:15px}
+</style></head><body style="padding:20px">
+<div style="position:relative"><div class="phone"><span class="tag">CONCEPT C · COMPACT · DESIGN_DATA</span>
+  <div class="statusbar"><span class="num">09:41</span><span class="num">UTC+08:00</span></div>
+  <div class="content">
+    <div class="top"><div class="p">外滩 · 上海</div><span class="chip cyan">黄金</span>
+      <button class="btn ghost" style="height:30px;padding:0 10px;font-size:11px">换机位</button></div>
+
+    <div class="verdict">
+      <div class="state">现在适合拍摄</div>
+      <h1>黄金时段进行中</h1>
+      <div class="why">低角度暖光，适合建筑与城市轮廓；还有约 48 分钟。</div>
+      <div class="nums">
+        <div><b class="num">112.4°</b><span>方位 东南</span></div>
+        <div><b class="num">8.6°</b><span>高度角</span></div>
+        <div><b class="num">09:41</b><span>本地时间</span></div>
+      </div>
+    </div>
+
+    <div class="next">
+      <div class="clock num">16:12</div>
+      <div class="t"><b>下一可拍：黄金（夕）</b><span class="num">16:12 – 17:02 · 方位 246° · 50 分钟</span></div>
+      <div class="chip amber">设提醒</div>
+    </div>
+
+    <div class="hint">把目标光线锁定下来：告诉逐光你想要的方向与高度，它会在未来日期里找出可拍窗口。</div>
+
+    <div class="rail">
+      <div class="r"><b>日出 / 日落</b><span class="num">06:18 / 17:02</span></div>
+      <div class="r"><b>蓝调（夕）</b><span class="num">17:02 – 17:20</span></div>
+      <div class="r"><b>本机位计划</b><span class="num">11-06 06:40</span></div>
+    </div>
+
+    <div class="cta">
+      <button class="btn primary big">反向寻光</button>
+      <button class="btn">完整日轨</button>
+      <button class="btn">计划</button>
+    </div>
+  </div>
+  <div class="tabbar"><div class="on"><i></i>今日</div><div><i></i>轨迹</div><div><i></i>计划</div><div><i></i>设置</div><div><i></i>更多</div></div>
+</div></div>
+</body></html>

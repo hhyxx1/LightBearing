@@ -1,4 +1,4 @@
-import { LightWindow } from './SolarCalc';
+import { LightWindow, WindowState } from './SolarCalc';
 
 /**
  * 观测仪表的真实时段区间（纯逻辑，便于宿主机测试）。
@@ -13,8 +13,8 @@ export class ObservationBands {
     if (!w.dayValid) {
       return out;
     }
-    ObservationBands.pushRange(out, w.goldenMorningStartUtc, w.goldenMorningEndUtc);
-    ObservationBands.pushRange(out, w.goldenEveningStartUtc, w.goldenEveningEndUtc);
+    ObservationBands.pushRange(out, w.goldenMorningState, w.goldenMorningStartUtc, w.goldenMorningEndUtc);
+    ObservationBands.pushRange(out, w.goldenEveningState, w.goldenEveningStartUtc, w.goldenEveningEndUtc);
     return out;
   }
 
@@ -24,17 +24,25 @@ export class ObservationBands {
     if (!w.dayValid) {
       return out;
     }
-    ObservationBands.pushRange(out, w.blueMorningStartUtc, w.blueMorningEndUtc);
-    ObservationBands.pushRange(out, w.blueEveningStartUtc, w.blueEveningEndUtc);
+    ObservationBands.pushRange(out, w.blueMorningState, w.blueMorningStartUtc, w.blueMorningEndUtc);
+    ObservationBands.pushRange(out, w.blueEveningState, w.blueEveningStartUtc, w.blueEveningEndUtc);
     return out;
   }
 
-  /** 仅在区间有效且长度为正时收录（负值哨兵一律丢弃） */
-  private static pushRange(out: number[], startUtc: number, endUtc: number): void {
+  /**
+   * 收录规则（UI-1B-R 修正）：
+   * - 只凭 **WindowState 显式状态** 判断窗口是否存在，不再用时间戳正负号；
+   * - 负 Unix 毫秒是 1970 年以前的合法 UTC（含跨 Epoch 的窗口），必须允许；
+   * - 仍拒绝：状态非 AVAILABLE、非有限值、逆序或零长度。
+   */
+  private static pushRange(out: number[], state: number, startUtc: number, endUtc: number): void {
+    if (state !== WindowState.AVAILABLE) {
+      return;
+    }
     if (!Number.isFinite(startUtc) || !Number.isFinite(endUtc)) {
       return;
     }
-    if (startUtc < 0 || endUtc < 0 || endUtc <= startUtc) {
+    if (!(endUtc > startUtc)) {
       return;
     }
     out.push(startUtc);

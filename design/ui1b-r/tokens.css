@@ -1,0 +1,49 @@
+/* UI-1B-R · 三套方案共享 Token（深色为主；浅色按同一层级换算） */
+:root{
+  --bg:#0B1622;            /* 比 UI-1B 更深，减少卡片感 */
+  --bg-2:#101F2D;
+  --surface:#152836;
+  --surface-2:#1C3546;
+  --line:rgba(226,246,255,.10);
+  --line-2:rgba(226,246,255,.18);
+  --amber:#FFBC6B;
+  --amber-dim:rgba(255,188,107,.16);
+  --cyan:#73D9D5;
+  --cyan-dim:rgba(115,217,213,.14);
+  --ink:#F9FAF3;
+  --muted:#93A9B6;
+  --danger:#FF8A80;
+  --ok:#7BD88F;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px;
+  --r-lg:20px; --r-md:12px; --r-pill:999px;
+  --t-display:44px; --t-h1:24px; --t-h2:19px; --t-body:14px; --t-cap:11.5px; --t-micro:10.5px;
+  --touch:48px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:#07111a;color:var(--ink);
+  font-family:"HarmonyOS Sans SC","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+.phone{width:390px;height:844px;background:var(--bg);border:1px solid var(--line-2);
+  border-radius:22px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.statusbar{height:38px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 16px;font-size:11px;color:var(--muted)}
+.content{flex:1;overflow:auto}
+.tabbar{height:64px;border-top:1px solid var(--line);display:flex;align-items:center;
+  justify-content:space-around;background:rgba(7,16,26,.92);flex:none}
+.tabbar div{font-size:10px;color:var(--muted);display:grid;gap:3px;justify-items:center}
+.tabbar div.on{color:var(--amber)}
+.tabbar i{width:18px;height:18px;border:1.5px solid currentColor;border-radius:5px;display:block}
+.cap{font-size:var(--t-cap);color:var(--muted)}
+.micro{font-size:var(--t-micro);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.tag{position:absolute;left:10px;top:-11px;font-size:10px;letter-spacing:.12em;color:var(--muted);
+  background:#07111a;padding:2px 8px;border-radius:6px}
+.btn{height:var(--touch);border-radius:var(--r-md);border:1px solid var(--line-2);
+  background:var(--surface-2);color:var(--ink);font-size:13px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;gap:6px}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:#0B1622}
+.btn.ghost{background:transparent}
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:var(--r-pill);
+  border:1px solid var(--line-2);font-size:var(--t-micro);color:var(--muted)}
+.chip.amber{border-color:rgba(255,188,107,.45);background:var(--amber-dim);color:var(--amber)}
+.chip.cyan{border-color:rgba(115,217,213,.4);background:var(--cyan-dim);color:var(--cyan)}
